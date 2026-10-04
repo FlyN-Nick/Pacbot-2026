@@ -40,7 +40,7 @@ Pacbot-2026/
 
 The model definitions will have one canonical implementation in `model_package/pacbot_rl_models/models.py`. `curc-pacbot-rl/src/models.py` will remain as a compatibility re-export for existing training and evaluation scripts. The RL project's Poetry environment will include the local model package so these scripts can import it after the normal project environment is installed.
 
-The model package will declare PyTorch as its runtime dependency. It will not include training-only libraries from the parent RL project.
+The model package will declare PyTorch as its runtime dependency. It will not include training-only libraries from the parent RL project. The existing RL project will remain Poetry-managed; its Poetry metadata and lockfile may be updated only as needed to install the focused local model package and preserve its current workflows.
 
 ## Bot dependency and runtime behavior
 
@@ -85,4 +85,5 @@ No model checkpoint will be added to either repository as part of this work.
 
 - Changes in Pacbot are limited to the root submodule metadata, `bot_client` dependency/runtime setup, and relevant README instructions.
 - Changes in `curc-pacbot-rl` are limited to packaging the reusable model definitions, preserving compatibility imports, and declaring the local package in its project environment.
+- The Poetry-to-uv migration for the broader `curc-pacbot-rl` project is explicitly deferred. Its training dependencies, Rust extension setup, and documented workflows remain managed by Poetry.
 - No checkpoint recovery, model retraining, broader RL training-stack migration, server changes, or hardware changes are included.
