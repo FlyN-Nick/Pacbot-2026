@@ -23,6 +23,8 @@ uv sync --extra dqn
 uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint /absolute/path/to/checkpoint.pt --force_no_bot
 ```
 
+On Intel macOS, DQN supports Python 3.10–3.12 with PyTorch 2.2.2 and NumPy 1.26. On Apple Silicon, DQN supports macOS 11 or newer with Python 3.10–3.14 and PyTorch 2.9.1. Current PyTorch wheels do not cover Python 3.13 or newer on Intel macOS, or Python 3.15 on the other platforms.
+
 Other useful files:
 
 - `decisionModule.py`: A* decision module with an asynchronous loop and game state locking
