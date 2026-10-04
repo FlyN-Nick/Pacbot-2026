@@ -1,6 +1,4 @@
 import asyncio
-import os
-import sys
 
 import numpy as np
 import torch
@@ -11,10 +9,7 @@ from time import time
 import low_level
 from low_level import send_direction, unstuck
 
-# Path to the curc-pacbot-rl model definitions
-_RL_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../curc-pacbot-rl/src')
-sys.path.insert(0, _RL_SRC)
-import models as _dqn_models  # noqa: E402
+from pacbot_rl_models import models as _dqn_models
 
 # Observation / action constants (from pacbot_rs_2/variables.rs and game_modes.rs)
 OBS_SHAPE = torch.Size([17, 28, 31])
