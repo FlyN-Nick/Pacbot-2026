@@ -82,7 +82,7 @@ The dashboard can also use a Unix domain socket for local direction-command IPC.
 ## Working on a component
 
 - **Game server:** [server README](server/README.md), [`server/game/`](server/game/), and [`config.json`](config.json).
-- **Sample bot:** [bot client README](bot_client/README.md). The client supports A* and DQN strategies; DQN runs require a compatible checkpoint. Use `python pacbotClient.py --help` to see options.
+- **Sample bot:** [bot client README](bot_client/README.md). The client supports A* and DQN strategies; DQN runs require a compatible checkpoint. Use `uv run python pacbotClient.py --help` to see options.
 - **Game visualizer:** [web client README](web_client/README.md). `npm run host` exposes Vite on the network; `npm run prod` creates a static build.
 - **Robot firmware:** [`low_level/RPiPacBot/`](low_level/RPiPacBot/), including the [UDP protocol](low_level/RPiPacBot/PROTOCOL.md) and [driving behavior](low_level/RPiPacBot/DRIVING.md).
 - **Robot dashboard:** [`dashboard/server/`](dashboard/server/) and [`dashboard/webapp/`](dashboard/webapp/).
