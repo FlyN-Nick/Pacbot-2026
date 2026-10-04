@@ -1,4 +1,3 @@
-import importlib
 import sys
 import unittest
 from types import SimpleNamespace
@@ -10,9 +9,11 @@ class StrategyDependencyTests(unittest.TestCase):
         code = """
 import sys
 import pacbotClient
+import low_level
 assert 'dqn_module' not in sys.modules
 assert 'torch' not in sys.modules
 assert 'pacbot_rl_models' not in sys.modules
+assert low_level.s is None
 """
         import subprocess
 
@@ -34,6 +35,8 @@ assert 'pacbot_rl_models' not in sys.modules
         self.assertIs(result, fake_decision)
         ctor.assert_called_once()
         self.assertNotIn("dqn_module", sys.modules)
+        self.assertNotIn("torch", sys.modules)
+        self.assertNotIn("pacbot_rl_models", sys.modules)
 
     def test_dqn_uses_installed_model_package(self):
         import pacbotClient
