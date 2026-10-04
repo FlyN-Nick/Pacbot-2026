@@ -19,7 +19,7 @@ The following setup runs the game server, bot simulation without a physical robo
 ### Requirements
 
 - Go 1.22 or newer
-- Python 3.10 or newer and `pip`
+- Python 3.10 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Node.js 18 or newer and `npm`
 
 ### 1. Start the game server
@@ -32,9 +32,18 @@ go run .
 ### 2. Start the bot in simulation mode
 
 ```sh
+git submodule update --init --recursive
 cd bot_client
-python -m pip install -r requirements.txt
-python pacbotClient.py --force_no_bot
+uv sync
+uv run python pacbotClient.py --force_no_bot
+```
+
+Run `git submodule update --init --recursive` after pulling these changes into an existing clone. To use DQN, supply your own compatible checkpoint file:
+
+```sh
+cd bot_client
+uv sync --extra dqn
+uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint /absolute/path/to/checkpoint.pt --force_no_bot
 ```
 
 ### 3. Start the game visualizer
