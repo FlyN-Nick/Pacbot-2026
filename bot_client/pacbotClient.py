@@ -1,6 +1,5 @@
 # JSON (for reading config.json)
 import json
-import os
 
 # Asyncio (for concurrency)
 import asyncio
@@ -15,14 +14,9 @@ from gameState import GameState
 
 # Decision modules
 from decisionModule import DecisionModule
-from dqn_module import DQNDecisionModule
 
 # Server messages
 from serverMessage import *
-
-# Restore the ability to use Ctrl + C within asyncio
-import signal
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 # Terminal colors for formatting output text
 from terminalColors import *
@@ -36,6 +30,7 @@ from pathfinding import find_path
 
 # Argument parser for command-line arguments
 import argparse
+from typing import Sequence
 
 import sys
 
@@ -53,19 +48,53 @@ def getConnectURL() -> str:
 	# Return the websocket connect address
 	return f'ws://{config["ServerIP"]}:{config["WebSocketPort"]}'
 
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+	parser = argparse.ArgumentParser(description='Pacbot client that is the brains of the operation')
+	parser.add_argument('--debug', action='store_true', help='Enable debug mode, where the pathfinding is displayed')
+	parser.add_argument('--games', type=int, default=-1, help='Number of games to run, -1 for infinite')
+	parser.add_argument('--delay', type=int, default=0, help='Delay between games in milliseconds')
+	parser.add_argument('--output', type=str, default='', help='Output file for scores')
+	parser.add_argument('--strategy', choices=['astar', 'dqn'], default='astar',
+	                    help='Decision strategy: astar (default) or dqn')
+	parser.add_argument('--checkpoint', type=str, default=None,
+	                    help='Path to DQN checkpoint .pt file (required when --strategy=dqn)')
+	parser.add_argument('--hybrid_mode', action=argparse.BooleanOptionalAction, default=True,
+	                    help='(DQN only) Fall back to A* when any ghost is within 2 tiles (default: on)')
+	parser.add_argument('--competition_mode', action=argparse.BooleanOptionalAction, default=True,
+	                    help='Suppress sending location updates to the game server (for physical competition use)')
+	parser.add_argument('--force_no_bot', action='store_true',
+	                    help='Skip robot socket connection (simulate without physical bot)')
+	args = parser.parse_args(argv)
+	if args.strategy == 'dqn' and not args.checkpoint:
+		parser.error('--checkpoint is required when --strategy=dqn')
+	if args.force_no_bot:
+		args.competition_mode = False
+	return args
+
+
+def make_decision_module(args: argparse.Namespace, state: GameState) -> object:
+	if args.strategy == 'dqn':
+		from dqn_module import DQNDecisionModule
+		return DQNDecisionModule(state, args.checkpoint, args.debug,
+		                        hybrid_mode=args.hybrid_mode,
+		                        force_no_bot=args.force_no_bot)
+	return DecisionModule(state, args.debug, force_no_bot=args.force_no_bot)
+
 class PacbotClient:
 	'''
 	Sample implementation of a websocket client to communicate with the
 	Pacbot game server, using asyncio.
 	'''
 
-	def __init__(self, connectURL: str) -> None:
+	def __init__(self, connectURL: str, args: argparse.Namespace) -> None:
 		'''
 		Construct a new Pacbot client object
 		'''
 
 		# Connection URL (starts with ws://)
 		self.connectURL: str = connectURL
+		self.args = args
 
 		# Private variable to store whether the socket is open
 		self._socketOpen: bool = False
@@ -77,13 +106,7 @@ class PacbotClient:
 		self.state: GameState = GameState(False if (args.games == 1 or args.competition_mode) else True)
 
 		# Decision module (policy) to make high-level decisions
-		if args.strategy == 'dqn':
-			self.decisionModule = DQNDecisionModule(self.state, args.checkpoint, args.debug,
-			                                        hybrid_mode=args.hybrid_mode,
-			                                        force_no_bot=args.force_no_bot)
-		else:
-			self.decisionModule: DecisionModule = DecisionModule(self.state, args.debug,
-			                                                     force_no_bot=args.force_no_bot)
+		self.decisionModule = make_decision_module(args, self.state)
   
 		# list of scores for each game
 		self.scores = []
@@ -174,28 +197,28 @@ class PacbotClient:
 					self.scores.append(self.state.currScore)
 					self.last_game_over_time = time()
 					curr_num_games = len(self.scores)
-					if args.games == curr_num_games:
+					if self.args.games == curr_num_games:
 						print(f'{RED}Simulation finished!{NORMAL}')
 						print(f'{GREEN}Scores: {self.scores}{NORMAL}' if len(self.scores) > 1 else f'{GREEN}Score: {self.scores[0]}{NORMAL}')
 						if len(self.scores) > 1:
 							print(f'{GREEN}Average score: {int(np.mean(self.scores))}{NORMAL}')
 							print(f'{GREEN}Standard deviation: {int(np.std(self.scores))}{NORMAL}')
-						if args.output:
-							with open(args.output, 'w') as f:
+						if self.args.output:
+							with open(self.args.output, 'w') as f:
 								f.write(str(self.scores))
-						if not args.competition_mode:
+						if not self.args.competition_mode:
 							await debug_server.reset_game()
 						await debug_server.pause_game()
 						await self.disconnect()
 						sys.exit(0)
 					else:
-						if args.games >= 10 and (curr_num_games % (args.games // 10) == 0):
-							print(f'{PINK}Simulation {int(curr_num_games/args.games*100)}% complete, avg score: {int(np.mean(self.scores))}, std dev: {int(np.std(self.scores))}{NORMAL}')
-						if args.delay > 0:
-							await asyncio.sleep(args.delay / 1000)
+						if self.args.games >= 10 and (curr_num_games % (self.args.games // 10) == 0):
+							print(f'{PINK}Simulation {int(curr_num_games/self.args.games*100)}% complete, avg score: {int(np.mean(self.scores))}, std dev: {int(np.std(self.scores))}{NORMAL}')
+						if self.args.delay > 0:
+							await asyncio.sleep(self.args.delay / 1000)
 						self.state.currLives = 3
 						self.state.currLevel = 1
-						if not args.competition_mode:
+						if not self.args.competition_mode:
 							await debug_server.reset_game()
 				elif should_resume:
 					await debug_server.resume_game()
@@ -203,7 +226,7 @@ class PacbotClient:
 				# Write a response back to the server if necessary
 				if self.state.writeServerBuf and self.state.writeServerBuf[0].tick():
 					response: bytes = self.state.writeServerBuf.popleft().getBytes()
-					if not args.competition_mode:
+					if not self.args.competition_mode:
 						self.connection.send(response)
 
 				# Free the event loop to allow another decision
@@ -224,7 +247,7 @@ def gpio_init():
 
 last_selected_pos = (1,1)
 # Main function
-async def main():
+async def main(args: argparse.Namespace):
 	#gpio_init()
     
 	# Start the debug server in the background
@@ -235,41 +258,23 @@ async def main():
 
 	# Get the URL to connect to
 	connectURL = getConnectURL()
-	client = PacbotClient(connectURL)
+	client = PacbotClient(connectURL, args)
 	await client.run()
 	
 	# Once the connection is closed, end the event loop
 	loop = asyncio.get_event_loop()
 	loop.stop()
 
-_DEFAULT_CHECKPOINT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '../../curc-pacbot-rl/src/checkpoints_all/winnie_ec2/checkpoints/q_net-iter0165500.ckpt.pt'
-)
 
-parser = argparse.ArgumentParser(description='Pacbot client that is the brains of the operation')
-parser.add_argument('--debug', action='store_true', help='Enable debug mode, where the pathfinding is displayed')
-parser.add_argument('--games', type=int, default=-1, help='Number of games to run, -1 for infinite')
-parser.add_argument('--delay', type=int, default=0, help='Delay between games in milliseconds')
-parser.add_argument('--output', type=str, default='', help='Output file for scores')
-parser.add_argument('--strategy', choices=['astar', 'dqn'], default='astar',
-                    help='Decision strategy: astar (default) or dqn')
-parser.add_argument('--checkpoint', type=str, default=_DEFAULT_CHECKPOINT,
-                    help='Path to DQN checkpoint .pt file (used when --strategy=dqn)')
-parser.add_argument('--hybrid_mode', action=argparse.BooleanOptionalAction, default=True,
-                    help='(DQN only) Fall back to A* when any ghost is within 2 tiles (default: on)')
-parser.add_argument('--competition_mode', action=argparse.BooleanOptionalAction, default=True,
-                    help='Suppress sending location updates to the game server (for physical competition use)')
-parser.add_argument('--force_no_bot', action='store_true',
-                    help='Skip robot socket connection (simulate without physical bot)')
+def run() -> None:
+	import signal
+	import low_level
 
-args = parser.parse_args()
+	args = parse_args()
+	signal.signal(signal.SIGINT, signal.SIG_DFL)
+	low_level.connect(force_no_bot=args.force_no_bot)
+	asyncio.run(main(args))
 
-if args.force_no_bot:
-	args.competition_mode = False
-
-import low_level
-low_level.connect(force_no_bot=args.force_no_bot)
 
 if __name__ == '__main__':
-	asyncio.run(main())
+	run()

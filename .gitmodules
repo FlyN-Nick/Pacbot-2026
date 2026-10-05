@@ -1,0 +1,3 @@
+[submodule "curc-pacbot-rl"]
+	path = curc-pacbot-rl
+	url = git@github.com:FlyN-Nick/curc-pacbot-rl.git

@@ -2,17 +2,21 @@ from gameState import Directions
 import socket
 import asyncio
 
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+# Create the robot socket only when the executable asks to connect. This keeps
+# importing the A* client safe on developer machines without robot hardware.
+s: socket.socket | None = None
 
 connected = False
 
 def connect(force_no_bot: bool = False):
-    global connected
+    global connected, s
     if force_no_bot:
         print("[Low level] force_no_bot: skipping robot socket connection")
         connected = False
         return
     try:
+        if s is None:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect("/tmp/pacbot.sock")
         connected = True
     except socket.error as e:
@@ -37,7 +41,8 @@ def send_direction(direction: Directions) -> None:
         return
 
     try:
-        s.sendall(f"{chars[direction]}\n".encode())
+        if s is not None:
+            s.sendall(f"{chars[direction]}\n".encode())
     except socket.error as e:
         print(f"[Low level] Could not send direction to robot socket: {e}")
 
@@ -53,4 +58,3 @@ async def unstuck(state, stuck_pos: tuple) -> None:
             break
         send_direction(direction)
         await asyncio.sleep(0.2)
-

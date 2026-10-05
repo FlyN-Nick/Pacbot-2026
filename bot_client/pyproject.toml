@@ -1,0 +1,23 @@
+[project]
+name = "pacbot-client"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26,<2; sys_platform == 'darwin' and platform_machine == 'x86_64' and python_version < '3.13'",
+    "numpy>=2.1,<3; sys_platform != 'darwin' or platform_machine != 'x86_64' or python_version >= '3.13'",
+    "websockets>=14,<18",
+]
+
+[project.optional-dependencies]
+dqn = [
+    "torch>=2.1,<2.3; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "torch>=2.3,<2.10; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torch>=2.1,<3; sys_platform != 'darwin'",
+    "pacbot-rl-models",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+pacbot-rl-models = { path = "../curc-pacbot-rl/model_package" }
