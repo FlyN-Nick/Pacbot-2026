@@ -2,6 +2,8 @@
 
 This is the software used at competition for Columbia University Robotics Club's PacBot.
 
+Clone the repo with `git clone --recurse-submodules https://github.com/FlyN-Nick/Pacbot-2026.git`.
+
 ## What's in the repository
 
 | Directory | Purpose | Main technologies |
@@ -32,13 +34,12 @@ go run .
 ### 2. Start the bot in simulation mode
 
 ```sh
-git submodule update --init --recursive
 cd bot_client
 uv sync
 uv run python pacbotClient.py --force_no_bot
 ```
 
-Run `git submodule update --init --recursive` after pulling these changes into an existing clone. To use DQN, supply your own compatible checkpoint file:
+To use a DQN, supply your own compatible checkpoint file:
 
 ```sh
 cd bot_client
