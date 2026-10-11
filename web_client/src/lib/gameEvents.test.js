@@ -56,14 +56,24 @@ test('eaten ghost high-bit transitions emit one event per ghost including simult
   ]);
 });
 
-test('fruit pickup requires active timer and score change, while expiry is ignored', () => {
+test('fruit pickup matches Pac-Man position and score, while expiry is ignored', () => {
   const tracker = createGameEventTracker();
   tracker.update(frame({ fruit: { rowState: 12, colState: 8, steps: 10 } }));
-  assert.deepEqual(tracker.update(frame({ tick: 2, score: 100, fruit: { rowState: 32, colState: 32, steps: 8 } })).map(({ type }) => type), ['fruitEaten']);
+  assert.deepEqual(tracker.update(frame({
+    tick: 2,
+    score: 100,
+    pacman: { rowState: 12, colState: 8 },
+    fruit: { rowState: 32, colState: 32, steps: 0 },
+  })).map(({ type }) => type), ['fruitEaten']);
 
   const expiryTracker = createGameEventTracker();
   expiryTracker.update(frame({ fruit: { rowState: 12, colState: 8, steps: 1 } }));
-  assert.deepEqual(expiryTracker.update(frame({ tick: 2, score: 10, fruit: { rowState: 32, colState: 32, steps: 0 } })), []);
+  assert.deepEqual(expiryTracker.update(frame({
+    tick: 2,
+    score: 10,
+    pacman: { rowState: 12, colState: 7 },
+    fruit: { rowState: 32, colState: 32, steps: 0 },
+  })), []);
 });
 
 test('life loss and gain are distinct transitions', () => {

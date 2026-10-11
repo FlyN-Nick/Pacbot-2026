@@ -70,7 +70,9 @@ export function createGameEventTracker() {
     const wasFruitVisible = isVisible(previous.fruit);
     const fruitIsGone = !isVisible(frame.fruit);
     const scoreChanged = frame.score > previous.score;
-    if (wasFruitVisible && previous.fruit.steps > 0 && frame.fruit.steps > 0 && fruitIsGone && scoreChanged) {
+    const pacmanReachedFruit = frame.pacman.rowState === previous.fruit.rowState
+      && frame.pacman.colState === previous.fruit.colState;
+    if (wasFruitVisible && previous.fruit.steps > 0 && fruitIsGone && scoreChanged && pacmanReachedFruit) {
       add({ type: 'fruitEaten', row: previous.fruit.rowState, col: previous.fruit.colState });
     }
 
