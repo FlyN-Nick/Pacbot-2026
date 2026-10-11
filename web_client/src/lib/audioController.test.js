@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createAudioController } from './audioController.js';
+
+function fixture({ failedFetch = false, failedDecode = false } = {}) {
+  const sources = [];
+  const oscillators = [];
+  const gains = [];
+  const context = {
+    state: 'suspended',
+    currentTime: 0,
+    destination: {},
+    resumeCount: 0,
+    async resume() { this.resumeCount++; this.state = 'running'; },
+    async close() { this.state = 'closed'; },
+    createGain() {
+      const gain = { gain: { value: 1 }, connect() {} };
+      gains.push(gain);
+      return gain;
+    },
+    createBufferSource() {
+      const source = { loop: false, started: false, stopped: false, connect() {},
+        start() { this.started = true; }, stop() { this.stopped = true; this.onended?.(); } };
+      sources.push(source);
+      return source;
+    },
+    createOscillator() {
+      const oscillator = { frequency: { value: 0 }, type: '', started: false, stopped: false,
+        connect() {}, start() { this.started = true; }, stop() { this.stopped = true; this.onended?.(); } };
+      oscillators.push(oscillator);
+      return oscillator;
+    },
+    async decodeAudioData() {
+      if (failedDecode) throw Error('bad WAV');
+      return { duration: 1 };
+    }
+  };
+  const urls = [];
+  const fetcher = async (url) => {
+    urls.push(url);
+    if (failedFetch) throw Error('offline');
+    return { ok: true, async arrayBuffer() { return new ArrayBuffer(8); } };
+  };
+  return { context, sources, oscillators, gains, urls, fetcher };
+}
+
+test('play while disabled leaves audio context untouched', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  await controller.play('intro');
+  assert.equal(f.sources.length, 0);
+  assert.equal(f.urls.length, 0);
+});
+
+test('unlock resumes the suspended context after enabling', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('intro');
+  assert.equal(f.context.resumeCount, 1);
+  assert.equal(f.sources.length, 1);
+  assert.equal(f.sources[0].started, true);
+});
+
+test('volume is clamped to zero through one on shared master gain', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setVolume(2);
+  controller.setEnabled(true);
+  await controller.unlock();
+  assert.equal(f.gains[0].gain.value, 1);
+  controller.setVolume(-0.5);
+  assert.equal(f.gains[0].gain.value, 0);
+  controller.setVolume(0.35);
+  assert.equal(f.gains[0].gain.value, 0.35);
+});
+
+test('missing assets and decode failures do not reject playback', async () => {
+  for (const options of [{ failedFetch: true }, { failedDecode: true }]) {
+    const f = fixture(options);
+    const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+    controller.setEnabled(true);
+    await controller.unlock();
+    await assert.doesNotReject(controller.play('fruit'));
+    assert.equal(f.sources.length, 0);
+  }
+});
+
+test('loop cue has one active source and can restart after stop', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher, assetBase: '/test-audio' });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('chomp', { loop: true });
+  await controller.play('chomp', { loop: true });
+  assert.equal(f.sources.length, 1);
+  assert.equal(f.sources[0].loop, true);
+  assert.deepEqual(f.urls, ['/test-audio/pacman_chomp.wav']);
+  controller.stop('chomp');
+  assert.equal(f.sources[0].stopped, true);
+  await controller.play('chomp', { loop: true });
+  assert.equal(f.sources.length, 2);
+});
+
+test('disabling stops active loops and prevents new sounds', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('frightened', { loop: true });
+  assert.equal(f.oscillators.length, 1);
+  controller.setEnabled(false);
+  assert.equal(f.oscillators[0].stopped, true);
+  await controller.play('frightened', { loop: true });
+  assert.equal(f.oscillators.length, 1);
+});
+
+test('stopping a pending loop prevents it from starting after load', async () => {
+  const f = fixture();
+  let releaseFetch;
+  const fetcher = () => new Promise((resolve) => { releaseFetch = () => resolve({ ok: true, async arrayBuffer() { return new ArrayBuffer(8); } }); });
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  const playing = controller.play('chomp', { loop: true });
+  controller.stop('chomp');
+  releaseFetch();
+  await playing;
+  assert.equal(f.sources.length, 0);
+});
+
+test('a one-shot cue can be interrupted', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('death');
+  controller.stop('death');
+  assert.equal(f.sources[0].stopped, true);
+});
+
+test('death interrupts gameplay audio and holds priority until it ends', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('frightened', { loop: true });
+  await controller.play('death');
+  assert.equal(f.oscillators[0].stopped, true);
+  await controller.play('chomp');
+  assert.equal(f.sources.length, 1);
+  f.sources[0].onended();
+  await controller.play('chomp');
+  assert.equal(f.sources.length, 2);
+});
+
+test('rapid pellet events are rate limited while later chomps play', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('chomp');
+  f.context.currentTime = 0.03;
+  await controller.play('chomp');
+  assert.equal(f.sources.length, 1);
+  f.context.currentTime = 0.11;
+  await controller.play('chomp');
+  assert.equal(f.sources.length, 2);
+});
