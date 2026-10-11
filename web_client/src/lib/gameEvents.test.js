@@ -63,7 +63,7 @@ test('fruit pickup requires active timer and score change, while expiry is ignor
 
   const expiryTracker = createGameEventTracker();
   expiryTracker.update(frame({ fruit: { rowState: 12, colState: 8, steps: 1 } }));
-  assert.deepEqual(expiryTracker.update(frame({ tick: 2, fruit: { rowState: 32, colState: 32, steps: 0 } })), []);
+  assert.deepEqual(expiryTracker.update(frame({ tick: 2, score: 10, fruit: { rowState: 32, colState: 32, steps: 0 } })), []);
 });
 
 test('life loss and gain are distinct transitions', () => {
@@ -78,6 +78,18 @@ test('active play start and final life loss emit start and game-over cues', () =
   tracker.update(frame({ mode: 0, lives: 1 }));
   assert.deepEqual(tracker.update(frame({ tick: 2, mode: 1, lives: 1 })).map(({ type }) => type), ['gameStarted']);
   assert.deepEqual(tracker.update(frame({ tick: 3, mode: 0, lives: 0 })).map(({ type }) => type), ['lifeLost', 'gameOver']);
+});
+
+test('gameStarted emits once per session, including after explicit reset', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 2, mode: 1 })).map(({ type }) => type), ['gameStarted']);
+  tracker.update(frame({ tick: 3, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 4, mode: 1 })), []);
+
+  tracker.reset();
+  tracker.update(frame({ tick: 5, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 6, mode: 1 })).map(({ type }) => type), ['gameStarted']);
 });
 
 test('level change emits once and treats the new frame as a reset baseline', () => {

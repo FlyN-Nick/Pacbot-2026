@@ -25,9 +25,11 @@ function snapshot(frame) {
 export function createGameEventTracker() {
   let previous = null;
   let nextId = 1;
+  let gameStartedForSession = false;
 
   function reset() {
     previous = null;
+    gameStartedForSession = false;
   }
 
   function update(frame) {
@@ -68,7 +70,7 @@ export function createGameEventTracker() {
     const wasFruitVisible = isVisible(previous.fruit);
     const fruitIsGone = !isVisible(frame.fruit);
     const scoreChanged = frame.score > previous.score;
-    if (wasFruitVisible && previous.fruit.steps > 0 && fruitIsGone && scoreChanged) {
+    if (wasFruitVisible && previous.fruit.steps > 0 && frame.fruit.steps > 0 && fruitIsGone && scoreChanged) {
       add({ type: 'fruitEaten', row: previous.fruit.rowState, col: previous.fruit.colState });
     }
 
@@ -79,8 +81,9 @@ export function createGameEventTracker() {
       add({ type: 'lifeGained' });
     }
 
-    if (!isActiveMode(previous.mode) && isActiveMode(frame.mode)) {
+    if (!gameStartedForSession && !isActiveMode(previous.mode) && isActiveMode(frame.mode)) {
       add({ type: 'gameStarted' });
+      gameStartedForSession = true;
     }
 
     previous = snapshot(frame);
