@@ -67,6 +67,7 @@
 </style>
 
 <script>
+  import { getGhostVisualState } from '../characterAnimations.js';
 
   // Grid size, same as for other components
   export let gridSize;
@@ -78,6 +79,7 @@
   export let rowState;
   export let colState;
   export let frightState;
+  export let trappedState = 0;
   export let spawning;
 
   // Timing info
@@ -107,13 +109,8 @@
   $: dirX = ((colState >> 6) << 30) >> 30
   $: dirY = ((rowState >> 6) << 30) >> 30
 
-  /*
-    Using bitwise operations to unpack the spawning conditions and
-    frighten steps of ghosts
-  */
+  // The top fright-state bit controls the exit offset while the ghost spawns.
   $: spawning = (frightState >> 7)
-  $: frightSteps = (frightState & 0b1111111)
-
   /*
     Visual effects, to make the ghosts appear as if they are
     between squares when spawning
@@ -130,12 +127,8 @@
                         ((updatePeriod - modTicks) / (updatePeriod) / 2) : (1/2)
                       ) : 0
 
-  // Determines if the ghost is frightened, using the frightened counter
-  $: fr = (frightSteps > 0)
-  $: rc = (frightSteps <= 10) && (2 * modTicks >= updatePeriod)
-
-  // Allow "animated" sprites by toggling every 2 ticks
-  $: spriteTwo = ((modTicks >> 1) & 1)
+  // Keep state decoding independent of the SVG shapes.
+  $: visual = getGhostVisualState(trappedState, frightState, modTicks, updatePeriod);
 
 </script>
 
@@ -155,7 +148,7 @@
   >
 
     <!-- Body of ghost -->
-    {#if spriteTwo}
+    {#if !visual.eaten && visual.spriteTwo}
       <path
         d=' M {pad} {pad + gridSize/2}
             A {gridSize/2} {gridSize/2} 0 0 1 {pad + gridSize} {gridSize/2}
@@ -165,9 +158,9 @@
             L {pad + 0.26 * gridSize} {pad + 0.9 * gridSize}
             L {pad + 0    * gridSize} {pad +       gridSize}
             z'
-        class={fr ? (rc ? 'white outlined' : 'blue outlined') : color}
+        class={visual.frightened ? (visual.flashing ? 'white outlined' : 'blue outlined') : color}
       />
-    {:else}
+    {:else if !visual.eaten}
       <path
         d=' M {pad} {pad + gridSize/2}
             A {gridSize/2} {gridSize/2} 0 0 1 {pad + gridSize} {gridSize/2}
@@ -179,7 +172,7 @@
             L {pad + 0.18 * gridSize} {pad + 0.9 * gridSize}
             L {pad + 0    * gridSize} {pad +       gridSize}
             z'
-        class={fr ? (rc ? 'white outlined' : 'blue outlined') : color}
+        class={visual.frightened ? (visual.flashing ? 'white outlined' : 'blue outlined') : color}
       />
     {/if}
 
@@ -189,7 +182,7 @@
       cy='{pad + (0.40 + 0.09*dirY) * gridSize}'
       rx='{0.14 * gridSize}'
       ry='{0.20 * gridSize}'
-      class={fr ? (rc ? 'transparent' : 'transparent') : 'white'}
+      class={visual.frightened ? 'transparent' : 'white'}
     />
 
     <!-- Right eye -->
@@ -198,7 +191,7 @@
       cy='{pad + (0.40 + 0.09*dirY) * gridSize}'
       rx='{0.14 * gridSize}'
       ry='{0.20 * gridSize}'
-      class={fr ? (rc ? 'transparent' : 'transparent') : 'white'}
+      class={visual.frightened ? 'transparent' : 'white'}
     />
 
     <!-- Left iris -->
@@ -207,7 +200,7 @@
       cy='{pad + (0.40 + 0.18*dirY) * gridSize}'
       rx='{0.07 * gridSize}'
       ry='{0.10 * gridSize}'
-      class={fr ? (rc ? 'red' : 'white') : 'blue'}
+      class={visual.frightened ? (visual.flashing ? 'red' : 'white') : 'blue'}
     />
 
     <!-- Right iris -->
@@ -216,18 +209,20 @@
       cy='{pad + (0.40 + 0.18*dirY) * gridSize}'
       rx='{0.07 * gridSize}'
       ry='{0.10 * gridSize}'
-      class={fr ? (rc ? 'red' : 'white') : 'blue'}
+      class={visual.frightened ? (visual.flashing ? 'red' : 'white') : 'blue'}
     />
 
     <!-- Mouth (when frightened) -->
-    <path
-      d=' M {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
-          L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
-          L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
-          L {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
-          z'
-      class={fr ? (rc ? 'red' : 'white') : 'transparent'}
-    />
+    {#if visual.frightened}
+      <path
+        d=' M {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
+            L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
+            L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
+            L {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
+            z'
+        class={visual.flashing ? 'red' : 'white'}
+      />
+    {/if}
 
   </svg>
 {/if}

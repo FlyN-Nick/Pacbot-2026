@@ -1,0 +1,129 @@
+.game-effects {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: calc(28 * var(--grid-size));
+  height: calc(31 * var(--grid-size));
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+  font-family: system-ui, sans-serif;
+  font-weight: 900;
+  text-align: center;
+  text-shadow: 0 2px 0 #17102b, 0 0 12px currentColor;
+}
+
+.effect-popup {
+  position: absolute;
+  white-space: nowrap;
+  font-size: clamp(12px, calc(1.05 * var(--grid-size)), 26px);
+  letter-spacing: 0.07em;
+  animation: score-rise 950ms ease-out both;
+}
+
+.ghost-score {
+  color: #8deaff;
+}
+
+.fruit-burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.fruit-score {
+  color: #ffacb5;
+  animation-duration: 1100ms;
+}
+
+.burst-ring {
+  position: absolute;
+  width: calc(1.2 * var(--grid-size));
+  height: calc(1.2 * var(--grid-size));
+  margin: calc(-0.6 * var(--grid-size));
+  border: max(2px, calc(0.12 * var(--grid-size))) solid #ff879c;
+  border-radius: 50%;
+  box-shadow: 0 0 calc(0.8 * var(--grid-size)) #ff6588;
+  animation: burst 700ms ease-out both;
+}
+
+.effect-banner {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: max-content;
+  max-width: 95%;
+  color: #ffe94f;
+  font-size: clamp(18px, calc(1.45 * var(--grid-size)), 38px);
+  letter-spacing: 0.12em;
+  transform: translate(-50%, -50%);
+  animation: banner 1250ms ease-out both;
+}
+
+.game-over-banner {
+  color: #ff6975;
+  font-size: clamp(20px, calc(1.8 * var(--grid-size)), 46px);
+  animation-duration: 3000ms;
+}
+
+.extra-life-banner {
+  color: #a7ffc0;
+  animation-duration: 1500ms;
+}
+
+.level-transition {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, #fbdc5755, #1b1d51a8 60%, #101028dd);
+  animation: level-wash 1600ms ease-out both;
+}
+
+.level-banner {
+  color: #fff38e;
+  animation-duration: 1600ms;
+}
+
+.death-impact {
+  position: absolute;
+  inset: 0;
+  border: max(3px, calc(0.2 * var(--grid-size))) solid #ff637a;
+  box-sizing: border-box;
+  background: radial-gradient(circle, transparent 20%, #ff345144 100%);
+  animation: death-flash 900ms ease-out both;
+}
+
+@keyframes score-rise {
+  from { opacity: 0; transform: translate(-50%, -5%) scale(0.7); }
+  16% { opacity: 1; transform: translate(-50%, -45%) scale(1.12); }
+  to { opacity: 0; transform: translate(-50%, -190%) scale(1); }
+}
+
+@keyframes burst {
+  from { opacity: 0.9; transform: scale(0.2); }
+  to { opacity: 0; transform: scale(2.4); }
+}
+
+@keyframes banner {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.65); }
+  20%, 70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+@keyframes level-wash {
+  from { opacity: 0; }
+  18%, 50% { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes death-flash {
+  from { opacity: 0; transform: translateX(0); }
+  18% { opacity: 0.7; transform: translateX(calc(0.17 * var(--grid-size))); }
+  36% { opacity: 0.45; transform: translateX(calc(-0.12 * var(--grid-size))); }
+  to { opacity: 0; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burst-ring { animation: none; opacity: 0; }
+  .death-impact { animation: level-wash 900ms ease-out both; background: transparent; }
+  .level-transition { background: transparent; }
+  .effect-popup, .effect-banner { animation-name: level-wash; }
+}
