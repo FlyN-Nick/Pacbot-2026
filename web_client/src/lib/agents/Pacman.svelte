@@ -56,12 +56,14 @@
     style:left="{gridSize * (dying ? lastX : posX)}px"
     style:top="{gridSize * (dying ? lastY : posY)}px"
   >
-    <div
-      class="pacman"
-      class:chomping={active && moving && !dying}
-      class:dying
-      style:--dir-angle="{dying ? lastRotation : rotation}deg"
-    />
+    {#key dying ? deathEventId : 'alive'}
+      <div
+        class="pacman"
+        class:chomping={active && moving && !dying}
+        class:dying
+        style:--dir-angle="{dying ? lastRotation : rotation}deg"
+      />
+    {/key}
   </div>
 {/if}
 
