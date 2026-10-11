@@ -155,6 +155,24 @@ test('death interrupts gameplay audio and holds priority until it ends', async (
   assert.equal(f.sources.length, 2);
 });
 
+test('death reserves priority while its WAV is loading', async () => {
+  const f = fixture();
+  let releaseFetch;
+  const fetcher = () => new Promise((resolve) => {
+    releaseFetch = () => resolve({ ok: true, async arrayBuffer() { return new ArrayBuffer(8); } });
+  });
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  const death = controller.play('death');
+  await controller.play('frightened', { loop: true });
+  assert.equal(f.oscillators.length, 0);
+  releaseFetch();
+  await death;
+  assert.equal(f.sources.length, 1);
+  assert.equal(f.sources[0].started, true);
+});
+
 test('rapid pellet events are rate limited while later chomps play', async () => {
   const f = fixture();
   const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });

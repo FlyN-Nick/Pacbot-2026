@@ -26,6 +26,7 @@ export function createAudioController({
   const buffers = new Map();
   const active = new Map();
   const pendingLoops = new Map();
+  const pendingPriority = new Map();
   const stopVersions = new Map();
 
   function ensureContext() {
@@ -58,6 +59,7 @@ export function createAudioController({
   function stop(name) {
     stopVersions.set(name, (stopVersions.get(name) || 0) + 1);
     pendingLoops.delete(name);
+    pendingPriority.delete(name);
     const entry = active.get(name);
     if (!entry) return;
     active.delete(name);
@@ -67,6 +69,7 @@ export function createAudioController({
   function stopAll() {
     generation++;
     pendingLoops.clear();
+    pendingPriority.clear();
     for (const name of active.keys()) stop(name);
   }
 
@@ -126,7 +129,8 @@ export function createAudioController({
     if (name !== 'frightened' && !Object.hasOwn(FILES, name)) return;
     if (name === 'chomp' && !loop && context.currentTime - lastChompTime < 0.09) return;
     const cuePriority = PRIORITY[name] || 0;
-    if ([...active.keys()].some((activeName) => (PRIORITY[activeName] || 0) > cuePriority)) return;
+    if ([...active.keys(), ...pendingPriority.keys()].some((activeName) =>
+      (PRIORITY[activeName] || 0) > cuePriority)) return;
     if (loop && (active.has(name) || pendingLoops.has(name))) return;
     if (cuePriority) stopAll();
     if (name === 'frightened') {
@@ -138,8 +142,10 @@ export function createAudioController({
     const stopVersion = stopVersions.get(name) || 0;
     const request = Symbol(name);
     if (loop) pendingLoops.set(name, request);
+    if (cuePriority) pendingPriority.set(name, request);
     const buffer = await load(name);
     if (loop && pendingLoops.get(name) === request) pendingLoops.delete(name);
+    if (pendingPriority.get(name) === request) pendingPriority.delete(name);
     if (!buffer || !enabled || destroyed || requestGeneration !== generation ||
       stopVersion !== (stopVersions.get(name) || 0) || context.state !== 'running') return;
     if (loop && active.has(name)) return;
