@@ -69,6 +69,7 @@
     (0 = none, 1 = pellet, 2 = super)
   */
   let pelletGrid = [];
+  let pelletRows = new Array(31).fill(null);
   for (let row = 0; row < 31; row++) {
     pelletGrid[row] = [];
     for (let col = 0; col < 28; col++) {
@@ -349,23 +350,31 @@
         fruitDuration     = view.getUint8(byteIdx++, false);
 
         // Parse pellet data
+        let pelletsChanged = false;
         for (let row = 0; row < 31; row++) {
           const binRow = view.getUint32(byteIdx, false);
-          for (let col = 0; col < 28; col++) {
+          if (pelletRows[row] !== binRow) {
+            pelletRows[row] = binRow;
+            pelletsChanged = true;
+            for (let col = 0; col < 28; col++) {
 
-            // Super pellet condition
-            let superPellet = ((row === 3) || (row === 23))
-                              && ((col === 1) || (col === 26));
+              // Super pellet condition
+              let superPellet = ((row === 3) || (row === 23))
+                                && ((col === 1) || (col === 26));
 
-            // Update the pellet grid
-            pelletGrid[row][col] = ((binRow >> col) & 1) ?
-                                    (superPellet ? 2 : 1) : 0;
+              // Update the pellet grid
+              pelletGrid[row][col] = ((binRow >> col) & 1) ?
+                                      (superPellet ? 2 : 1) : 0;
+            }
           }
           byteIdx += 4;
         }
 
-        // Trigger an update for the pellets
-        pelletGrid = pelletGrid;
+        // Pellet data usually remains unchanged between game frames. Only
+        // invalidate the grid when a server row actually changes.
+        if (pelletsChanged) {
+          pelletGrid = pelletGrid;
+        }
       }
     }
   });
@@ -623,7 +632,12 @@
   const handleKeyDown = (event) => {
 
     // Retrieve the key information
-    const key = event.key;
+    const key = event.code === 'Space' ? ' ' : event.key;
+
+    // Space should control the game instead of scrolling the page.
+    if (event.code === 'Space') {
+      event.preventDefault();
+    }
 
     // Check if it is a pause/play command
     const control = mediaControlCommand(key);
@@ -650,7 +664,7 @@
   const handleKeyUp = (event) => {
 
     // Retrieve the key information
-    const key = event.key;
+    const key = event.code === 'Space' ? ' ' : event.key;
 
     if (key === 'p' || key === 'P' || key === ' ') {
       mediaControlKeyHeld = false;

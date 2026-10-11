@@ -5,7 +5,7 @@
     position: absolute;
     width:  calc(var(--grid-size) + 2 * var(--pad));
     height: calc(var(--grid-size) + 2 * var(--pad));
-    transform: scale(1.5);
+    transform-origin: top left;
   }
 
   /* Blinky */
@@ -146,10 +146,12 @@
     style:--grid-size='{~~gridSize+1}px'
     style:--color={color}
     style:--pad='{pad}px'
-    style:top='{(posY + showMotion*(dirY*modTicks/updatePeriod) + spawnOffsetY) *
-                          gridSize - pad}px'
-    style:left='{(posX + showMotion*(dirX*modTicks/updatePeriod) + spawnOffsetX) *
-                          gridSize - pad}px'
+    style:top='0'
+    style:left='0'
+    style:transform='translate3d({(posX + showMotion*(dirX*modTicks/updatePeriod) + spawnOffsetX) *
+                          gridSize - pad - 0.25 * (gridSize + 2 * pad)}px,
+                          {(posY + showMotion*(dirY*modTicks/updatePeriod) + spawnOffsetY) *
+                          gridSize - pad - 0.25 * (gridSize + 2 * pad)}px, 0) scale(1.5)'
   >
 
     <!-- Body of ghost -->
