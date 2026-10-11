@@ -1,0 +1,43 @@
+name: Python compatibility
+
+on:
+  push:
+    paths:
+      - "bot_client/**"
+      - ".github/workflows/python-compatibility.yml"
+  pull_request:
+    paths:
+      - "bot_client/**"
+      - ".github/workflows/python-compatibility.yml"
+
+jobs:
+  bot:
+    name: Bot Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Check lock
+        working-directory: bot_client
+        run: uv lock --check
+      - name: Install base dependencies
+        working-directory: bot_client
+        run: uv sync --python ${{ matrix.python-version }}
+      - name: Test base dependencies
+        working-directory: bot_client
+        run: uv run --python ${{ matrix.python-version }} python -m unittest discover -s tests -v
+      - name: Install DQN dependencies
+        working-directory: bot_client
+        run: uv sync --extra dqn --python ${{ matrix.python-version }}
+      - name: Check DQN imports
+        working-directory: bot_client
+        run: uv run --extra dqn --python ${{ matrix.python-version }} python -c "import torch; from pacbot_rl_models import models; print(torch.__version__, models.QNet.__name__)"

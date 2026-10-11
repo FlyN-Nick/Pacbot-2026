@@ -2,7 +2,7 @@
 
 This folder contains sample Python code for a high-level Pacbot client. Teams can adapt the navigation algorithm and robot communication to their needs.
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use Python 3.10 or newer. From the repository root, initialize the RL model submodule (also needed after pulling into an existing clone):
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use Python 3.11 or newer. Install a supported interpreter with `uv python install 3.11` (or another supported Python version). From the repository root, initialize the RL model submodule (also needed after pulling into an existing clone):
 
 ```sh
 git submodule update --init --recursive
@@ -23,7 +23,7 @@ uv sync --extra dqn
 uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint /absolute/path/to/checkpoint.pt --force_no_bot
 ```
 
-On Intel macOS, DQN supports Python 3.10–3.12 with PyTorch 2.2.2 and NumPy 1.26. On Apple Silicon, DQN supports macOS 11 or newer with Python 3.10–3.14 and PyTorch 2.9.1. Current PyTorch wheels do not cover Python 3.13 or newer on Intel macOS, or Python 3.15 on the other platforms.
+The bot supports Python 3.11 and newer. The current compatibility checks cover Python 3.11–3.14. DQN availability depends on PyTorch wheels for the operating system and architecture; on Intel macOS, the configured PyTorch range supports Python 3.11–3.12.
 
 Other useful files:
 
