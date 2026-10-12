@@ -12,6 +12,37 @@ function isPowerPellet(row, col) {
   return (row === 3 || row === 23) && (col === 1 || col === 26);
 }
 
+function ghostAwardTotal(comboStart, count) {
+  let total = 0;
+  for (let index = 0; index < count; index += 1) {
+    const combo = comboStart + index;
+    // The server shifts a uint16, discarding overflow from each award.
+    total += combo < 16 ? (200 * (2 ** combo)) & 0xffff : 0;
+  }
+  return total;
+}
+
+function possibleGhostScores(priorCombo, finalCombo, eatenCount, resetCount) {
+  if (resetCount === 0) return [ghostAwardTotal(priorCombo, eatenCount)];
+  if (finalCombo > eatenCount) return [];
+
+  // The resulting combo counts awards after the last power pellet. Earlier
+  // awards may precede the first reset or fall between subsequent resets.
+  const totals = new Set();
+  const afterLastReset = ghostAwardTotal(0, finalCombo);
+  function distribute(remaining, resets, combo, score) {
+    if (resets === 1) {
+      totals.add(score + ghostAwardTotal(combo, remaining) + afterLastReset);
+      return;
+    }
+    for (let count = 0; count <= remaining; count += 1) {
+      distribute(remaining - count, resets - 1, 0, score + ghostAwardTotal(combo, count));
+    }
+  }
+  distribute(eatenCount - finalCombo, resetCount, priorCombo, 0);
+  return [...totals];
+}
+
 function snapshot(frame) {
   return {
     ...frame,
@@ -48,7 +79,7 @@ export function createGameEventTracker() {
     const events = [];
     const add = (event) => events.push({ id: nextId++, ...event });
     let knownScore = 0;
-    let hasPowerPellet = false;
+    let powerPelletCount = 0;
 
     for (let row = 0; row < Math.min(frame.pelletRows.length, previous.pelletRows.length); row += 1) {
       const removed = (previous.pelletRows[row] >>> 0) & ~(frame.pelletRows[row] >>> 0);
@@ -56,7 +87,7 @@ export function createGameEventTracker() {
         if ((removed & (1 << col)) === 0) continue;
         const powerPellet = isPowerPellet(row, col);
         knownScore += powerPellet ? 50 : 10;
-        hasPowerPellet ||= powerPellet;
+        if (powerPellet) powerPelletCount += 1;
         add({
           type: powerPellet ? 'powerPellet' : 'pellet',
           row,
@@ -76,27 +107,19 @@ export function createGameEventTracker() {
       }
     });
 
-    // Power pellets reset the combo. The final combo records the awards after
-    // that reset; otherwise awards start at the preceding frame's combo.
-    const comboStart = hasPowerPellet
-      ? Math.max(0, frame.ghostCombo - eatenGhosts.length)
-      : previous.ghostCombo;
-    eatenGhosts.forEach((_, index) => {
-      const combo = comboStart + index;
-      // The server shifts a uint16, discarding overflow from each award.
-      knownScore += combo < 16 ? (200 * (2 ** combo)) & 0xffff : 0;
-    });
-
     const wasFruitVisible = isVisible(previous.fruit);
     const fruitIsGone = !isVisible(frame.fruit);
-    const scoreDelta = (frame.score - previous.score + 0x10000) % 0x10000;
-    const residual = scoreDelta - knownScore;
     // Absolute moves can collect fruit along a route then finish elsewhere.
-    // Account for other scoring rather than requiring the final fruit tile.
-    // At the server's score cap, only a positive unexplained increment proves
-    // pickup; when known scoring already reaches the cap it is ambiguous.
-    const fruitScored = residual === 100
-      || (frame.score === 0xffff && residual > 0 && residual < 100);
+    // Account for every possible reset chronology. At saturation or with
+    // multiple resets, emit only if no valid chronology explains expiry.
+    const ghostScores = possibleGhostScores(
+      previous.ghostCombo, frame.ghostCombo, eatenGhosts.length, powerPelletCount,
+    );
+    const matchesScore = (increment) => frame.score === 0xffff
+      ? Math.min(previous.score + increment, 0xffff) === frame.score
+      : (previous.score + increment) % 0x10000 === frame.score;
+    const fruitScored = ghostScores.some((points) => matchesScore(knownScore + points + 100))
+      && !ghostScores.some((points) => matchesScore(knownScore + points));
     if (wasFruitVisible && previous.fruit.steps > 0 && fruitIsGone && fruitScored) {
       add({ type: 'fruitEaten', row: previous.fruit.rowState, col: previous.fruit.colState });
     }

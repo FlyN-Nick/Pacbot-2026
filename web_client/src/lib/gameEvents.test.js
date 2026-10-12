@@ -135,6 +135,65 @@ test('a power pellet resets the combo used to account for simultaneous ghost sco
   })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
 });
 
+test('fruit residual includes an old-combo ghost eaten before a power pellet reset', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index === 0 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 550, ghostCombo: 0, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
+});
+
+test('fruit residual includes a reset-combo ghost eaten after a power pellet', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index === 0 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 350, ghostCombo: 1, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
+});
+
+test('one reset accounts for ghost awards on both sides of the power pellet', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 750, ghostCombo: 1, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'ghostEaten', 'fruitEaten']);
+});
+
+test('multiple power resets recognize a pickup only when known scoring cannot explain disappearance', () => {
+  const rows = Array(31).fill(0);
+  rows[3] = (1 << 1) | (1 << 26);
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  // With prior combo 2 and final combo 0, possible ghost totals are
+  // 600 (both between resets), 1000 (one before each), and 2400 (both before).
+  for (const [score, expectedFruit] of [[800, true], [700, false], [1200, true], [1100, false], [2600, true], [2500, false]]) {
+    const tracker = createGameEventTracker();
+    tracker.update(frame({ ghostCombo: 2, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+    const events = tracker.update(frame({ tick: 2, score, ghostCombo: 0, ghosts, pacman: { rowState: 12, colState: 9 } }));
+    assert.equal(events.some(({ type }) => type === 'fruitEaten'), expectedFruit, `score ${score}`);
+  }
+});
+
+test('multiple reset scoring at the cap omits a pickup if another chronology explains expiry', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = (1 << 1) | (1 << 26);
+  tracker.update(frame({ score: 64785, ghostCombo: 2, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 1 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  // 750 observed points could be 100 + 600 + fruit (capped), or
+  // 100 + 1000 / 2400 without fruit (also capped).
+  const events = tracker.update(frame({ tick: 2, score: 65535, ghostCombo: 0, ghosts }));
+  assert.equal(events.some(({ type }) => type === 'fruitEaten'), false);
+});
+
 test('fruit residual handles a wrapped uint16 packet score', () => {
   const tracker = createGameEventTracker();
   tracker.update(frame({ score: 65500, fruit: { rowState: 12, colState: 8, steps: 10 } }));
