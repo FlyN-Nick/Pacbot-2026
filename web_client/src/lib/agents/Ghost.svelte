@@ -8,6 +8,20 @@
     transform-origin: top left;
   }
 
+  .ghost-svg.returning {
+    animation: return-home 650ms ease-in-out both;
+    z-index: 4;
+  }
+
+  @keyframes return-home {
+    from { transform: translate3d(var(--return-from-x), var(--return-from-y), 0) scale(1.5); }
+    to { transform: translate3d(var(--return-to-x), var(--return-to-y), 0) scale(1.5); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ghost-svg.returning { animation-duration: 1ms; }
+  }
+
   /* Blinky */
   path.red { fill: red; }
 
@@ -67,6 +81,7 @@
 </style>
 
 <script>
+  import { onDestroy } from 'svelte';
   import { getGhostVisualState } from '../characterAnimations.js';
 
   // Grid size, same as for other components
@@ -80,7 +95,25 @@
   export let colState;
   export let frightState;
   export let trappedState = 0;
+  export let returnEvent = null;
   export let spawning;
+
+  let returning = false;
+  let seenReturnEventId = null;
+  let returnTimer;
+  let returnFromRow = 13;
+  let returnFromCol = 13;
+  // The server respawns red at pink's location, then moves it out of the house.
+  $: returnTarget = color === 'cyan' ? [14, 11] : color === 'orange' ? [14, 15] : [13, 13];
+  $: if (returnEvent && returnEvent.id !== seenReturnEventId) {
+    seenReturnEventId = returnEvent.id;
+    returnFromRow = returnEvent.row;
+    returnFromCol = returnEvent.col;
+    returning = true;
+    clearTimeout(returnTimer);
+    returnTimer = setTimeout(() => returning = false, 650);
+  }
+  onDestroy(() => clearTimeout(returnTimer));
 
   // Timing info
   export let modTicks;
@@ -128,17 +161,24 @@
                       ) : 0
 
   // Keep state decoding independent of the SVG shapes.
-  $: visual = getGhostVisualState(trappedState, frightState, modTicks, updatePeriod);
+  $: visual = getGhostVisualState(returning ? 0x80 : trappedState, frightState, modTicks, updatePeriod);
+  $: returnPad = pad + 0.25 * (gridSize + 2 * pad);
 
 </script>
 
 <!-- SVG Sprite of Ghost -->
-{#if showGhost}
+{#if showGhost || returning}
+  {#key returning ? seenReturnEventId : 'server'}
   <svg
     class='ghost-svg'
+    class:returning
     style:--grid-size='{~~gridSize+1}px'
     style:--color={color}
     style:--pad='{pad}px'
+    style:--return-from-x='{returnFromCol * gridSize - returnPad}px'
+    style:--return-from-y='{returnFromRow * gridSize - returnPad}px'
+    style:--return-to-x='{returnTarget[1] * gridSize - returnPad}px'
+    style:--return-to-y='{returnTarget[0] * gridSize - returnPad}px'
     style:top='0'
     style:left='0'
     style:transform='translate3d({(posX + showMotion*(dirX*modTicks/updatePeriod) + spawnOffsetX) *
@@ -225,4 +265,5 @@
     {/if}
 
   </svg>
+  {/key}
 {/if}

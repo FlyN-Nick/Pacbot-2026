@@ -25,8 +25,21 @@
     /* Positioning */
     position: absolute;
     transform: translate(50%, 50%);
-    bottom: 50%;
+    bottom: calc(50% + 26px);
     right: 50%;
+    width: calc(28 * var(--grid-size));
+    height: calc(31 * var(--grid-size));
+  }
+
+  .audio-toolbar {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0 8px;
+    z-index: 10;
   }
 
   :global(.path) {
@@ -36,6 +49,84 @@
 </style>
 
 <script>
+  import { onDestroy } from 'svelte';
+  import AudioControls from './lib/AudioControls.svelte';
+  import GameEffects from './lib/environment/GameEffects.svelte';
+  import { createGameEventTracker } from './lib/gameEvents.js';
+  import { createAudioController } from './lib/audioController.js';
+  import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents } from './lib/eventActions.js';
+
+  const eventTracker = createGameEventTracker();
+  const audioController = createAudioController({ assetBase: `${import.meta.env.BASE_URL}audio` });
+  let audioEnabled = false;
+  let audioVolume = 0.5;
+  let latestFrame = null;
+  let visualEvents = [];
+  let effectsRevision = 0;
+  let deathEventId = null;
+  let ghostReturnEvents = [];
+  let pacmanActive = false;
+  let pacmanMoving = false;
+
+  function clearGameEffects() {
+    eventTracker.reset();
+    latestFrame = null;
+    visualEvents = [];
+    deathEventId = null;
+    ghostReturnEvents = [];
+    effectsRevision++;
+    pacmanActive = false;
+    pacmanMoving = false;
+    audioController.stopAll();
+  }
+
+  function syncFrightenedAudio() {
+    if (latestFrame && getFrameActivity(latestFrame, socketOpen).frightened) {
+      // Repeated calls are safe; they also restart after a priority jingle ends.
+      audioController.play('frightened', { loop: true });
+    } else {
+      audioController.stop('frightened');
+    }
+  }
+
+  function handleAudioEnabled(event) {
+    audioEnabled = event.detail;
+    syncFrightenedAudio();
+  }
+
+  function routeFrame(frame) {
+    if (isGameReset(latestFrame, frame)) clearGameEffects();
+    const activity = getFrameActivity(frame, socketOpen);
+    if (pacmanActive && !activity.active) audioController.stopAll();
+    pacmanActive = activity.active;
+    pacmanMoving = activity.moving;
+
+    // Strip direction bits while preserving the hidden-location marker.
+    const position = ({ rowState, colState, ...state }) => ({
+      ...state,
+      rowState: rowState & 0x3f,
+      colState: colState & 0x3f,
+    });
+    const events = enrichGhostEvents(eventTracker.update({
+      ...frame,
+      pacman: position(frame.pacman),
+      ghosts: frame.ghosts.map(position),
+      fruit: position(frame.fruit),
+    }), frame, latestFrame);
+    for (const event of events) {
+      if (event.type === 'ghostEaten') ghostReturnEvents[event.ghostIndex] = event;
+    }
+    ghostReturnEvents = ghostReturnEvents;
+    latestFrame = frame;
+    const actions = getEventActions(events);
+    visualEvents = actions.visualEvents;
+    for (const { name, event } of actions.audioCues) {
+      if (event.type === 'lifeLost') deathEventId = event.id;
+      // Frightened mode is driven by state, including pause and respawn.
+      if (name !== 'frightened') audioController.play(name);
+    }
+    syncFrightenedAudio();
+  }
 
   /* Config */
   import config from '../../config.json';
@@ -260,6 +351,7 @@
   socket.addEventListener('open', (_) => {
     console.log('WebSocket connection established');
     socketOpen = true;
+    clearGameEffects();
   });
 
   // Handling a new connection between webClient and bot 
@@ -270,7 +362,8 @@
 
   // Message events
   socket.addEventListener('message', (event) => {
-    if (event.data instanceof ArrayBuffer) {
+    // Ignore partial frames before changing any rendering/event state.
+    if (event.data instanceof ArrayBuffer && event.data.byteLength >= 159) {
 
       // Log the time
       const ts = Date.now();
@@ -375,6 +468,19 @@
         if (pelletsChanged) {
           pelletGrid = pelletGrid;
         }
+        routeFrame({
+          tick: currTicks, mode: gameMode, lives: currLives,
+          score: currScore, level: currLevel, ghostCombo,
+          pacman: { rowState: pacmanRowState, colState: pacmanColState },
+          ghosts: [
+            { rowState: redRowState, colState: redColState, frightState: redFrightState, trappedState: redTrappedState },
+            { rowState: pinkRowState, colState: pinkColState, frightState: pinkFrightState, trappedState: pinkTrappedState },
+            { rowState: cyanRowState, colState: cyanColState, frightState: cyanFrightState, trappedState: cyanTrappedState },
+            { rowState: orangeRowState, colState: orangeColState, frightState: orangeFrightState, trappedState: orangeTrappedState },
+          ].slice(0, numActiveGhosts),
+          fruit: { rowState: fruitRowState, colState: fruitColState, steps: fruitSteps },
+          pelletRows: [...pelletRows],
+        });
       }
     }
   });
@@ -466,20 +572,24 @@
   socket.addEventListener('close', (_) => {
     socketOpen = false;
     gameMode = Modes.Offline;
+    clearGameEffects();
     console.log('WebSocket connection closed');
   });
 
   // Event on close for bot-web client connection
   botSocket.addEventListener('close', (_) => {
     botSocketOpen = false;
-    gameMode = Modes.Offline;
     console.log('WebSocket connection with robot closed');
   });
 
   // Track the size of the window, to determine the grid size
   let innerWidth = 0;
   let innerHeight = 0;
-  $: gridSize = Math.min(innerHeight / 31, innerWidth / 28)
+  // On mobile, overflowing content can expand innerWidth beyond the viewport.
+  $: gridSize = Math.max(0, Math.min(
+    (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / 31,
+    Math.min(innerWidth, document.documentElement.clientWidth) / 28,
+  ))
 
   // Calculate the remainder when currTicks is divided by updatePeriod
   $: modTicks = currTicks % updatePeriod
@@ -630,6 +740,7 @@
 
   // Handle key presses, to send responses back to the server
   const handleKeyDown = (event) => {
+    if (event.target?.closest?.('button, input, select, textarea, a, [contenteditable], [role="button"], [role="slider"]')) return;
 
     // Retrieve the key information
     const key = event.code === 'Space' ? ' ' : event.key;
@@ -674,6 +785,12 @@
     }
   }
 
+  onDestroy(() => {
+    audioController.destroy();
+    socket.close();
+    botSocket.close();
+  });
+
 </script>
 
 <svelte:window
@@ -705,10 +822,14 @@
     {fruitDuration}
   />
 
+  {#key effectsRevision}
   <Pacman
     {gridSize}
     {pacmanRowState}
     {pacmanColState}
+    active={pacmanActive}
+    moving={pacmanMoving}
+    {deathEventId}
   />
 
   {#if numActiveGhosts >= 1}
@@ -719,6 +840,8 @@
       rowState={redRowState}
       colState={redColState}
       frightState={redFrightState}
+      trappedState={redTrappedState}
+      returnEvent={ghostReturnEvents[0]}
       color='red'
     />
   {/if}
@@ -731,6 +854,8 @@
       rowState={pinkRowState}
       colState={pinkColState}
       frightState={pinkFrightState}
+      trappedState={pinkTrappedState}
+      returnEvent={ghostReturnEvents[1]}
       color='pink'
     />
   {/if}
@@ -743,6 +868,8 @@
       rowState={cyanRowState}
       colState={cyanColState}
       frightState={cyanFrightState}
+      trappedState={cyanTrappedState}
+      returnEvent={ghostReturnEvents[2]}
       color='cyan'
     />
   {/if}
@@ -755,9 +882,12 @@
       rowState={orangeRowState}
       colState={orangeColState}
       frightState={orangeFrightState}
+      trappedState={orangeTrappedState}
+      returnEvent={ghostReturnEvents[3]}
       color='orange'
     />
   {/if}
+  {/key}
 
   <Mps
     {gridSize}
@@ -792,4 +922,18 @@
     {Directions}
   />
 
+  {#key effectsRevision}
+    <GameEffects events={visualEvents} {gridSize} />
+  {/key}
+
+</div>
+
+<div class="audio-toolbar">
+  <AudioControls
+    controller={audioController}
+    enabled={audioEnabled}
+    volume={audioVolume}
+    on:enabled={handleAudioEnabled}
+    on:volume={(event) => audioVolume = event.detail}
+  />
 </div>
