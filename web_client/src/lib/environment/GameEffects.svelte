@@ -61,7 +61,6 @@
         style:top="{gridSize * (event.row + 0.5)}px"
       >
         <span class="burst-ring" aria-hidden="true"></span>
-        <span class="effect-popup fruit-score">FRUIT!</span>
       </div>
     {:else if event.type === 'gameStarted'}
       <div class="effect-banner ready-banner">READY!</div>

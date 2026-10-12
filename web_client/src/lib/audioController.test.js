@@ -109,11 +109,25 @@ test('disabling stops active loops and prevents new sounds', async () => {
   controller.setEnabled(true);
   await controller.unlock();
   await controller.play('frightened', { loop: true });
-  assert.equal(f.oscillators.length, 1);
+  assert.equal(f.sources.length, 1);
+  assert.deepEqual(f.urls, ['/audio/fright_firstloop.wav', '/audio/fright.wav']);
   controller.setEnabled(false);
-  assert.equal(f.oscillators[0].stopped, true);
+  assert.equal(f.sources[0].stopped, true);
   await controller.play('frightened', { loop: true });
-  assert.equal(f.oscillators.length, 1);
+  assert.equal(f.sources.length, 1);
+});
+
+test('frightened mode plays its opening cue, then loops the frightened sound', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('frightened', { loop: true });
+  assert.equal(f.sources[0].loop, false);
+  f.sources[0].onended();
+  assert.equal(f.sources.length, 2);
+  assert.equal(f.sources[1].loop, true);
+  assert.deepEqual(f.urls, ['/audio/fright_firstloop.wav', '/audio/fright.wav']);
 });
 
 test('stopping a pending loop prevents it from starting after load', async () => {
@@ -147,12 +161,12 @@ test('death interrupts gameplay audio and holds priority until it ends', async (
   await controller.unlock();
   await controller.play('frightened', { loop: true });
   await controller.play('death');
-  assert.equal(f.oscillators[0].stopped, true);
-  await controller.play('chomp');
-  assert.equal(f.sources.length, 1);
-  f.sources[0].onended();
+  assert.equal(f.sources[0].stopped, true);
   await controller.play('chomp');
   assert.equal(f.sources.length, 2);
+  f.sources[1].onended();
+  await controller.play('chomp');
+  assert.equal(f.sources.length, 3);
 });
 
 test('death reserves priority while its WAV is loading', async () => {
@@ -166,7 +180,7 @@ test('death reserves priority while its WAV is loading', async () => {
   await controller.unlock();
   const death = controller.play('death');
   await controller.play('frightened', { loop: true });
-  assert.equal(f.oscillators.length, 0);
+  assert.equal(f.sources.length, 0);
   releaseFetch();
   await death;
   assert.equal(f.sources.length, 1);

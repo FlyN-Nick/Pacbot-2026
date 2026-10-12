@@ -35,6 +35,18 @@
     stroke: none;
   }
 
+  .other-fruit {
+    position: absolute;
+    z-index: 3;
+    width: var(--grid-size);
+    height: var(--grid-size);
+    display: grid;
+    place-items: center;
+    font-size: calc(0.8 * var(--grid-size));
+    line-height: 1;
+    transform: scale(1.2);
+  }
+
 </style>
 
 <script>
@@ -49,7 +61,10 @@
   // Fruit steps and duration
   export let fruitSteps;
   export let fruitDuration;
+  export let currLevel = 1;
   $: opacity = fruitSteps / fruitDuration;
+  $: fruitKind = ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(currLevel, 1) - 1, 12)];
+  $: fruitIcon = ({ strawberry: '🍓', orange: '🍊', apple: '🍎', melon: '🍈', galaxian: '👾', bell: '🔔', key: '🔑' })[fruitKind];
 
   // Using the & operator to pick out the 5 lowest bits
   $: posX = fruitColState & 0b11111
@@ -61,6 +76,9 @@
 </script>
 
 {#if showFruit}
+  {#if fruitKind !== 'cherry'}
+    <span class="other-fruit" style:--grid-size="{gridSize}px" style:left="{gridSize * posX}px" style:top="{gridSize * posY}px" style:opacity="{opacity}" aria-label={fruitKind}>{fruitIcon}</span>
+  {:else}
   <svg class='cherry-svg'
       style:--grid-size='{~~gridSize+1}px'
       style:left='{gridSize * posX}px'
@@ -156,4 +174,5 @@
     />
 
   </svg>
+  {/if}
 {/if}

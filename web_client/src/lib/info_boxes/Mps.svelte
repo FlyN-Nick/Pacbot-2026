@@ -18,12 +18,12 @@
     background-color: rgba(0,0,0,0.3);
 
     /* Grid-size related CSS */
-    width:       calc(5   * var(--grid-size));
-    height:      calc(3   * var(--grid-size));
-    line-height: calc(3   * var(--grid-size));
-    left:        calc(23  * var(--grid-size));
-    top:         calc(10  * var(--grid-size));
-    font-size:   calc(0.9 * var(--grid-size));
+    width:       calc(2.5 * var(--grid-size));
+    height:      calc(1.5 * var(--grid-size));
+    line-height: calc(1.5 * var(--grid-size));
+    left:        calc(2.5 * var(--grid-size));
+    top:         calc(11.5 * var(--grid-size));
+    font-size:   calc(0.55 * var(--grid-size));
   }
 
 </style>

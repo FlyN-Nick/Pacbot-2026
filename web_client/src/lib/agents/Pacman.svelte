@@ -7,6 +7,7 @@
   export let active = false;
   export let moving = false;
   export let deathEventId = null;
+  export let startupEventId = null;
 
   let lastX = 13;
   let lastY = 23;
@@ -14,6 +15,9 @@
   let seenDeathEventId = null;
   let dying = false;
   let deathTimer;
+  let startedEventId = null;
+  let starting = false;
+  let startupTimer;
 
   $: showPacman = ((pacmanRowState | pacmanColState) & 0x20) === 0;
   $: posX = pacmanColState & 0x1f;
@@ -43,10 +47,17 @@
     dying = true;
     deathTimer = setTimeout(() => {
       dying = false;
-    }, 1300);
+    }, 1800);
   }
 
-  onDestroy(() => clearTimeout(deathTimer));
+  $: if (startupEventId != null && startupEventId !== startedEventId) {
+    startedEventId = startupEventId;
+    clearTimeout(startupTimer);
+    starting = true;
+    startupTimer = setTimeout(() => { starting = false; }, 1250);
+  }
+
+  onDestroy(() => { clearTimeout(deathTimer); clearTimeout(startupTimer); });
 </script>
 
 {#if showPacman || dying}
@@ -59,7 +70,7 @@
     {#key dying ? deathEventId : 'alive'}
       <div
         class="pacman"
-        class:chomping={active && moving && !dying}
+        class:chomping={active && moving && !dying && !starting}
         class:dying
         style:--dir-angle="{dying ? lastRotation : rotation}deg"
       />
@@ -83,7 +94,6 @@
     background: #ffe528;
     clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 80%, 45% 50%, 100% 20%, 200% -100%);
     transform: scale(1.5) rotate(var(--dir-angle));
-    filter: drop-shadow(0 0 calc(var(--grid-size) * 0.25) #ffe52888);
   }
 
   .pacman.chomping {
@@ -91,12 +101,12 @@
   }
 
   .pacman.dying {
-    animation: death 1300ms ease-in forwards;
+    animation: death 1800ms steps(10, end) forwards;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .pacman.chomping { animation: none; }
-    .pacman.dying { animation: reduced-death 1300ms ease-in forwards; }
+    .pacman.dying { animation: reduced-death 1800ms ease-in forwards; }
   }
 
   @keyframes reduced-death {
@@ -111,8 +121,8 @@
   }
 
   @keyframes death {
-    0%, 28% { transform: scale(1.5) rotate(var(--dir-angle)); opacity: 1; }
-    65% { transform: scale(1.15) rotate(calc(var(--dir-angle) + 180deg)); opacity: 1; }
-    100% { transform: scale(0) rotate(calc(var(--dir-angle) + 360deg)); opacity: 0; }
+    0% { clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 80%, 45% 50%, 100% 20%, 200% -100%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 1; }
+    45% { clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 53%, 45% 50%, 100% 47%, 200% -100%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 1; }
+    100% { clip-path: circle(0% at 50% 50%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 0; }
   }
 </style>

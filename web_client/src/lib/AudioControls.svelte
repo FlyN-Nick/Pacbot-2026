@@ -1,75 +1,67 @@
 <script>
   import { createEventDispatcher } from 'svelte';
 
-  export let controller;
   export let enabled = false;
-  export let volume = 0.5;
 
   const dispatch = createEventDispatcher();
-
-  async function toggleAudio() {
-    const nextEnabled = !enabled;
-    controller?.setEnabled(nextEnabled);
-    if (nextEnabled && !(await controller?.unlock())) {
-      controller?.setEnabled(false);
-      enabled = false;
-    } else {
-      enabled = nextEnabled;
-    }
-    dispatch('enabled', enabled);
-  }
-
-  function changeVolume(event) {
-    volume = Number(event.currentTarget.value) / 100;
-    controller?.setVolume(volume);
-    dispatch('volume', volume);
-  }
 </script>
 
 <div class="audio-controls" role="group" aria-label="Game audio controls">
-  <button type="button" aria-pressed={enabled} on:click={toggleAudio}>
-    {enabled ? 'Sound on' : 'Sound off'}
+  <button type="button" aria-label={enabled ? 'Mute game audio' : 'Unmute game audio'} aria-pressed={enabled} on:click={() => dispatch('toggle')}>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 9v6h4l5 4V5L7 9H3z" />
+      {#if enabled}
+        <path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7m2.8-9.8a9 9 0 0 1 0 12.6" />
+      {:else}
+        <path class="mute" d="m16 9 5 6m0-6-5 6" />
+      {/if}
+    </svg>
   </button>
-  <label for="game-audio-volume">Volume</label>
-  <input
-    id="game-audio-volume"
-    type="range"
-    min="0"
-    max="100"
-    step="1"
-    value={Math.round(volume * 100)}
-    on:input={changeVolume}
-  />
 </div>
 
 <style>
   .audio-controls {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
     color: white;
     font: inherit;
   }
 
   button {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid currentColor;
-    border-radius: 0.3rem;
-    background: transparent;
+    width: calc(2.5 * var(--grid-size));
+    height: calc(1.5 * var(--grid-size));
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.3);
     color: inherit;
-    font: inherit;
     cursor: pointer;
   }
 
-  button[aria-pressed='true'] {
-    background: #ffd34e;
-    color: #15121e;
+  svg {
+    width: calc(0.85 * var(--grid-size));
+    height: calc(0.85 * var(--grid-size));
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  button:focus-visible, input:focus-visible {
+  .wave, .mute { fill: none; }
+  button[aria-pressed='true'] { color: #ffe528; }
+
+  :global(.audio-controls) {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    top: calc(11.5 * var(--grid-size));
+  }
+
+  button:focus-visible {
     outline: 2px solid #ffd34e;
     outline-offset: 3px;
   }
-
-  input { accent-color: #ffd34e; }
 </style>

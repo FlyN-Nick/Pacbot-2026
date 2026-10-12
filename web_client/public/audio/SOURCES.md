@@ -11,6 +11,6 @@ These files were extracted from the [ClassicGaming.cc Pac-Man sounds page](https
 | `extraLife` | `pacman_extrapac.wav` | [pacman-extrapac.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-extrapac.zip) |
 | `intermission` | `pacman_intermission.wav` | [pacman-intermission.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-intermission.zip) |
 | `death` | `pacman_death.wav` | [pacman-death.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-death.zip) |
-| `frightened` | Synthesized in Web Audio | No separate clip on the source page |
+| `frightened` | `fright.wav`, preceded by `fright_firstloop.wav` | [The Sounds Resource Pac-Man sound archive](https://sounds.spriters-resource.com/arcade/pacman/asset/404131/) |
 
 The WAVs are mono, 8-bit PCM at 11,025 Hz, except `pacman_chomp.wav` at 22,050 Hz.

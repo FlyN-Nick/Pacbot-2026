@@ -5,7 +5,9 @@ const FILES = Object.freeze({
   ghost: 'pacman_eatghost.wav',
   extraLife: 'pacman_extrapac.wav',
   intermission: 'pacman_intermission.wav',
-  death: 'pacman_death.wav'
+  death: 'pacman_death.wav',
+  frightened: 'fright.wav',
+  frightenedFirstLoop: 'fright_firstloop.wav'
 });
 const PRIORITY = { intro: 1, intermission: 2, death: 3 };
 
@@ -103,22 +105,39 @@ export function createAudioController({
     return buffers.get(name);
   }
 
-  function startFrightened(loop) {
+  async function startFrightened(loop) {
+    const request = Symbol('frightened');
+    const requestGeneration = generation;
+    const stopVersion = stopVersions.get('frightened') || 0;
+    if (loop) pendingLoops.set('frightened', request);
+    const [firstLoopBuffer, loopBuffer] = await Promise.all([
+      load('frightenedFirstLoop'),
+      load('frightened')
+    ]);
+    if (loop && pendingLoops.get('frightened') === request) pendingLoops.delete('frightened');
+    if (!loopBuffer || !enabled || destroyed || requestGeneration !== generation ||
+      stopVersion !== (stopVersions.get('frightened') || 0) || context?.state !== 'running') return;
+
     try {
-      const oscillator = context.createOscillator();
-      const toneGain = context.createGain();
-      oscillator.type = 'sawtooth';
-      oscillator.frequency.value = 115;
-      toneGain.gain.value = 0.055;
-      oscillator.connect(toneGain);
-      toneGain.connect(master);
-      const entry = { loop, stop: () => oscillator.stop() };
+      let source;
+      const entry = { loop, stop: () => source?.stop() };
       active.set('frightened', entry);
-      oscillator.onended = () => {
-        if (active.get('frightened') === entry) active.delete('frightened');
+      const playBuffer = (buffer, shouldLoop) => {
+        if (active.get('frightened') !== entry) return;
+        source = context.createBufferSource();
+        source.buffer = buffer;
+        source.loop = shouldLoop;
+        source.connect(master);
+        source.onended = () => {
+          if (active.get('frightened') !== entry) return;
+          if (shouldLoop) active.delete('frightened');
+          else if (loop) playBuffer(loopBuffer, true);
+          else active.delete('frightened');
+        };
+        source.start();
       };
-      oscillator.start();
-      if (!loop) oscillator.stop(context.currentTime + 0.22);
+      if (firstLoopBuffer) playBuffer(firstLoopBuffer, false);
+      else playBuffer(loopBuffer, loop);
     } catch {
       active.delete('frightened');
     }
@@ -135,7 +154,7 @@ export function createAudioController({
     if (cuePriority) stopAll();
     if (name === 'frightened') {
       stop(name);
-      startFrightened(loop);
+      await startFrightened(loop);
       return;
     }
     const requestGeneration = generation;

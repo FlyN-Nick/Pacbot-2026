@@ -32,14 +32,7 @@
   }
 
   .audio-toolbar {
-    position: absolute;
-    bottom: 8px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    padding: 0 8px;
-    z-index: 10;
+    display: contents;
   }
 
   :global(.path) {
@@ -58,8 +51,8 @@
 
   const eventTracker = createGameEventTracker();
   const audioController = createAudioController({ assetBase: `${import.meta.env.BASE_URL}audio` });
+  const fruitTypeForLevel = (level) => ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(level, 1) - 1, 12)];
   let audioEnabled = false;
-  let audioVolume = 0.5;
   let latestFrame = null;
   let visualEvents = [];
   let effectsRevision = 0;
@@ -68,12 +61,19 @@
   let pacmanActive = false;
   let pacmanMoving = false;
   let lastPacmanMovementTick = -Infinity;
+  let animationPauseLock = false;
+  let animationPauseTimer;
+  let deathShouldResume = false;
+  let pickedFruits = {};
 
   function clearGameEffects() {
     eventTracker.reset();
     latestFrame = null;
     visualEvents = [];
     deathEventId = null;
+    pickedFruits = {};
+    animationPauseLock = false;
+    clearTimeout(animationPauseTimer);
     ghostReturnEvents = [];
     effectsRevision++;
     pacmanActive = false;
@@ -91,9 +91,30 @@
     }
   }
 
-  function handleAudioEnabled(event) {
-    audioEnabled = event.detail;
-    syncFrightenedAudio();
+  async function toggleAudio() {
+    if (audioEnabled) {
+      audioController.setEnabled(false);
+      audioEnabled = false;
+      return;
+    }
+    audioController.setEnabled(true);
+    if (await audioController.unlock()) {
+      audioEnabled = true;
+      syncFrightenedAudio();
+    } else {
+      audioController.setEnabled(false);
+      audioEnabled = false;
+    }
+  }
+
+  function holdGameplayForAnimation(duration, resumeAfter = true) {
+    clearTimeout(animationPauseTimer);
+    animationPauseLock = true;
+    sendToSocket('p');
+    animationPauseTimer = setTimeout(() => {
+      animationPauseLock = false;
+      if (resumeAfter && socketOpen) sendToSocket('P');
+    }, duration);
   }
 
   function routeFrame(frame) {
@@ -118,8 +139,19 @@
       ghosts: frame.ghosts.map(position),
       fruit: position(frame.fruit),
     }), frame, latestFrame);
+    const gameWasRunning = latestFrame && (latestFrame.mode === Modes.Scatter || latestFrame.mode === Modes.Chase);
     for (const event of events) {
       if (event.type === 'ghostEaten') ghostReturnEvents[event.ghostIndex] = event;
+      if (event.type === 'fruitEaten') {
+        const type = fruitTypeForLevel(frame.level);
+        pickedFruits[type] = (pickedFruits[type] || 0) + 1;
+        pickedFruits = { ...pickedFruits };
+      }
+      if (event.type === 'gameStarted') holdGameplayForAnimation(1250);
+      if (event.type === 'lifeLost') {
+        deathShouldResume = Boolean(gameWasRunning);
+        holdGameplayForAnimation(1800, deathShouldResume);
+      }
     }
     ghostReturnEvents = ghostReturnEvents;
     latestFrame = frame;
@@ -147,6 +179,7 @@
 
   /* Info Boxes */
   import Lives from './lib/info_boxes/Lives.svelte';
+  import FruitInventory from './lib/info_boxes/FruitInventory.svelte';
   import Mps from './lib/info_boxes/Mps.svelte';
   import Score from './lib/info_boxes/Score.svelte';
   import Ticker from './lib/info_boxes/Ticker.svelte';
@@ -729,6 +762,8 @@
   // Const toggle pause
   const togglePause = () => {
 
+    if (animationPauseLock) return;
+
     // Send the command directly to the socket
     sendToSocket(gameMode === Modes.Paused ? 'P' : 'p');
   }
@@ -750,6 +785,12 @@
     // Retrieve the key information
     const key = event.code === 'Space' ? ' ' : event.key;
 
+    if (key.toLowerCase() === 'm') {
+      event.preventDefault();
+      toggleAudio();
+      return;
+    }
+
     // Space should control the game instead of scrolling the page.
     if (event.code === 'Space') {
       event.preventDefault();
@@ -757,13 +798,13 @@
 
     // Check if it is a pause/play command
     const control = mediaControlCommand(key);
-    if (control) {
+    if (control && !animationPauseLock) {
       sendToSocket(control);
     }
 
     // Check if it is a motion command
     const motion = motionCommand(key);
-    if (motion) {
+    if (motion && !animationPauseLock) {
       sendToSocket(motion);
     }
 
@@ -791,6 +832,7 @@
   }
 
   onDestroy(() => {
+    clearTimeout(animationPauseTimer);
     audioController.destroy();
     socket.close();
     botSocket.close();
@@ -825,6 +867,7 @@
     {fruitColState}
     {fruitSteps}
     {fruitDuration}
+    currLevel={currLevel}
   />
 
   {#key effectsRevision}
@@ -835,6 +878,7 @@
     active={pacmanActive}
     moving={pacmanMoving}
     {deathEventId}
+    startupEventId={visualEvents.find((event) => event.type === 'gameStarted')?.id ?? null}
   />
 
   {#if numActiveGhosts >= 1}
@@ -894,10 +938,9 @@
   {/if}
   {/key}
 
-  <Mps
-    {gridSize}
-    {mpsAvg}
-  />
+  <FruitInventory {gridSize} fruits={pickedFruits} />
+
+  <Mps {gridSize} {mpsAvg} />
 
   <Ticker
     {gridSize}
@@ -931,14 +974,10 @@
     <GameEffects events={visualEvents} {gridSize} />
   {/key}
 
-</div>
-
-<div class="audio-toolbar">
-  <AudioControls
-    controller={audioController}
-    enabled={audioEnabled}
-    volume={audioVolume}
-    on:enabled={handleAudioEnabled}
-    on:volume={(event) => audioVolume = event.detail}
-  />
+  <div class="audio-toolbar">
+    <AudioControls
+      enabled={audioEnabled}
+      on:toggle={toggleAudio}
+    />
+  </div>
 </div>

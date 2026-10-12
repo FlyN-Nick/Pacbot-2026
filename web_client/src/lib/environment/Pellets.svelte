@@ -12,6 +12,7 @@
     border: none;
     display: flex;
     background-color: rgba(0,0,0,0);
+    transition: background-color 70ms linear;
     padding: 0;
     margin: 0;
     box-shadow: inset 0px 0px 1px 1px rgba(255,255,255,0.05);
