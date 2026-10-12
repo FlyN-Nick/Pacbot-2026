@@ -94,6 +94,16 @@
     animation: death 1300ms ease-in forwards;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .pacman.chomping { animation: none; }
+    .pacman.dying { animation: reduced-death 1300ms ease-in forwards; }
+  }
+
+  @keyframes reduced-death {
+    0%, 28% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
   @keyframes chomp {
     to {
       clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 52%, 45% 50%, 100% 48%, 200% -100%);

@@ -38,13 +38,22 @@ export function enrichGhostEvents(events, frame, previous) {
   });
 }
 
-/** Use packed direction bits for motion; bit 5 marks a hidden location. */
-export function getFrameActivity(frame, online) {
+export function hasPacmanMoved(previous, frame) {
+  if (!previous) return false;
+  const before = previous.pacman;
+  const current = frame.pacman;
+  if (((before.rowState | before.colState | current.rowState | current.colState) & 0x20) !== 0) return false;
+  return (before.rowState & 0x1f) !== (current.rowState & 0x1f)
+    || (before.colState & 0x1f) !== (current.colState & 0x1f);
+}
+
+/** Bit 5 marks a hidden location; facing bits do not prove movement. */
+export function getFrameActivity(frame, online, lastMovementTick = -Infinity, updatePeriod = 1) {
   const visible = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) === 0;
   const active = online && visible && frame.lives > 0 && (frame.mode === 1 || frame.mode === 2);
   return {
     active,
-    moving: active && ((frame.pacman.rowState | frame.pacman.colState) & 0xc0) !== 0,
+    moving: active && frame.tick >= lastMovementTick && frame.tick - lastMovementTick <= Math.max(1, updatePeriod),
     frightened: active && frame.ghosts.some((ghost) =>
       (ghost.frightState & 0x7f) > 0 && (ghost.trappedState & 0x80) === 0),
   };

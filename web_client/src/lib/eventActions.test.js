@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents } from './eventActions.js';
+import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './eventActions.js';
 
 test('game transitions select the matching audio cue without losing visual event identity', () => {
   const events = [
@@ -31,14 +31,14 @@ test('empty and unknown events produce no audio', () => {
 });
 
 const activeFrame = {
-  mode: 1, lives: 3,
+  tick: 100, mode: 1, lives: 3,
   pacman: { rowState: 23, colState: 13 | 0x40 },
   ghosts: [{ frightState: 8, trappedState: 0 }],
 };
 
 test('movement and frightened loops follow active visible play', () => {
-  assert.deepEqual(getFrameActivity(activeFrame, true), { active: true, moving: true, frightened: true });
-  assert.deepEqual(getFrameActivity({ ...activeFrame, mode: 2 }, true), { active: true, moving: true, frightened: true });
+  assert.deepEqual(getFrameActivity(activeFrame, true, 99, 12), { active: true, moving: true, frightened: true });
+  assert.deepEqual(getFrameActivity({ ...activeFrame, mode: 2 }, true, 99, 12), { active: true, moving: true, frightened: true });
   for (const mode of [0, 10]) {
     assert.deepEqual(getFrameActivity({ ...activeFrame, mode }, true), { active: false, moving: false, frightened: false });
   }
@@ -83,4 +83,31 @@ test('ghost popups preserve IDs and derive coordinates and sequential awards fro
   assert.deepEqual(enrichGhostEvents([events[0]], { ...frame, ghostCombo: 1 }, {
     ghosts: [{ rowState: 9 | 0x40, colState: 10 | 0xc0 }],
   })[0], { id: 20, type: 'ghostEaten', ghostIndex: 0, row: 9, col: 10, points: 200 });
+});
+
+// Catches stale direction bits being treated as continuous movement.
+test('a stationary active player with a persisted direction does not chomp', () => {
+  assert.equal(getFrameActivity(activeFrame, true).moving, false);
+  assert.equal(getFrameActivity(activeFrame, true, 80, 12).moving, false);
+});
+
+// Catches a chomp ending between coordinate updates or surviving after movement stops.
+test('recent movement keeps chomping through one update period and stops afterward', () => {
+  assert.equal(getFrameActivity(activeFrame, true, 100, 12).moving, true);
+  assert.equal(getFrameActivity({ ...activeFrame, tick: 112 }, true, 100, 12).moving, true);
+  assert.equal(getFrameActivity({ ...activeFrame, tick: 113 }, true, 100, 12).moving, false);
+  assert.equal(getFrameActivity({ ...activeFrame, mode: 0 }, true, 100, 12).moving, false);
+  assert.equal(getFrameActivity(activeFrame, false, 100, 12).moving, false);
+});
+
+// Catches changes in facing, hidden locations, or first snapshots arming movement.
+test('only visible coordinate changes count as Pac-Man movement', () => {
+  assert.equal(hasPacmanMoved(null, activeFrame), false);
+  assert.equal(hasPacmanMoved(activeFrame, activeFrame), false);
+  assert.equal(hasPacmanMoved(activeFrame, { ...activeFrame, pacman: { rowState: 23 | 0x40, colState: 13 } }), false);
+  assert.equal(hasPacmanMoved(activeFrame, { ...activeFrame, pacman: { rowState: 23, colState: 14 | 0x40 } }), true);
+  assert.equal(hasPacmanMoved(activeFrame, { ...activeFrame, pacman: { rowState: 22 | 0xc0, colState: 13 } }), true);
+  const hidden = { ...activeFrame, pacman: { rowState: 32, colState: 32 } };
+  assert.equal(hasPacmanMoved(activeFrame, hidden), false);
+  assert.equal(hasPacmanMoved(hidden, activeFrame), false);
 });

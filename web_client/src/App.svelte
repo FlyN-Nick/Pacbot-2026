@@ -54,7 +54,7 @@
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
-  import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents } from './lib/eventActions.js';
+  import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
 
   const eventTracker = createGameEventTracker();
   const audioController = createAudioController({ assetBase: `${import.meta.env.BASE_URL}audio` });
@@ -67,6 +67,7 @@
   let ghostReturnEvents = [];
   let pacmanActive = false;
   let pacmanMoving = false;
+  let lastPacmanMovementTick = -Infinity;
 
   function clearGameEffects() {
     eventTracker.reset();
@@ -77,6 +78,7 @@
     effectsRevision++;
     pacmanActive = false;
     pacmanMoving = false;
+    lastPacmanMovementTick = -Infinity;
     audioController.stopAll();
   }
 
@@ -96,7 +98,10 @@
 
   function routeFrame(frame) {
     if (isGameReset(latestFrame, frame)) clearGameEffects();
-    const activity = getFrameActivity(frame, socketOpen);
+    const currentActive = getFrameActivity(frame, socketOpen).active;
+    if (!currentActive) lastPacmanMovementTick = -Infinity;
+    else if (pacmanActive && hasPacmanMoved(latestFrame, frame)) lastPacmanMovementTick = frame.tick;
+    const activity = getFrameActivity(frame, socketOpen, lastPacmanMovementTick, updatePeriod);
     if (pacmanActive && !activity.active) audioController.stopAll();
     pacmanActive = activity.active;
     pacmanMoving = activity.moving;
