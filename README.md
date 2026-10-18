@@ -40,13 +40,13 @@ uv sync
 uv run python pacbotClient.py --force_no_bot
 ```
 
-To use a DQN, supply your own compatible checkpoint file:
+To use a DQN with one of the tracked best checkpoints:
 
 ```sh
 uv python install 3.11
 cd bot_client
 uv sync --extra dqn
-uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint /absolute/path/to/checkpoint.pt --force_no_bot
+uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint ../curc-pacbot-rl/src/best_checkpoints/urlriljg/q_net-iter0619000.ckpt.pt --force_no_bot
 ```
 
 ### 3. Start the game visualizer

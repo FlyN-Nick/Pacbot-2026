@@ -50,7 +50,11 @@ class DQNDecisionModule:
         self.log = log
         self.hybrid_mode = hybrid_mode
         self.force_no_bot = force_no_bot
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(
+            'mps' if torch.backends.mps.is_available()
+            else 'cuda' if torch.cuda.is_available()
+            else 'cpu'
+        )
         self._last_ghost_pos: list[tuple[int, int]] = [(32, 32)] * 4
         self._using_astar: bool = False
         self._load_model(checkpoint_path)
