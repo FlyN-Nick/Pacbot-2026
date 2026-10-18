@@ -195,12 +195,15 @@ class DQNDecisionModule:
                     print('[DQN] Hybrid: switching to A* (super pellet eaten, ghosts frightened)')
                 else:
                     print('[DQN] Hybrid: switching to A* (ghost nearby)')
+            self._astar.avoidance_map.updateMap(self.state)
+            self._astar.avoidance_map.show_map()
             return self._astar.get_direction()
 
         if self.hybrid_mode and self._using_astar:
             self._using_astar = False
             print('[DQN] Hybrid: switching to RL (no frightened ghosts, ghost far)')
             DebugServer.instance.reset_cell_colors()
+            DebugServer.instance.clear_path()
 
         obs = self._build_obs()
         mask = self._get_action_mask()
@@ -213,10 +216,6 @@ class DQNDecisionModule:
         # Record ghost positions for the next step's last-position channels
         for i, ghost in enumerate(self.state.ghosts):
             self._last_ghost_pos[i] = (ghost.location.row, ghost.location.col)
-
-        if self.hybrid_mode:
-            self._astar.avoidance_map.updateMap(self.state)
-            self._astar.avoidance_map.show_map()
 
         return _ACTION_TO_DIR[action]
 

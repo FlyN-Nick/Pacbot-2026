@@ -425,10 +425,8 @@
           break;
         }
         case 'set_path': {
-          const currentPathCells = document.getElementsByClassName('path');
-          for (let i = 0; i < currentPathCells.length; i++) {
-            currentPathCells[i].classList.remove('path');
-          }
+          const currentPathCells = Array.from(document.getElementsByClassName('path'));
+          currentPathCells.forEach((cell) => cell.classList.remove('path'));
           
           for (let i = 1; i < content.length; i += 2) {
             let row = content[i];

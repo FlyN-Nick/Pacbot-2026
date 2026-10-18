@@ -55,29 +55,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 	parser.add_argument('--games', type=int, default=-1, help='Number of games to run, -1 for infinite')
 	parser.add_argument('--delay', type=int, default=0, help='Delay between games in milliseconds')
 	parser.add_argument('--output', type=str, default='', help='Output file for scores')
-	parser.add_argument('--strategy', choices=['astar', 'dqn'], default='astar',
-	                    help='Decision strategy: astar (default) or dqn')
+	parser.add_argument('--strategy', choices=['astar', 'dqn', 'hybrid'], default='astar',
+	                    help='Decision strategy: astar, dqn, or hybrid (default: astar)')
 	parser.add_argument('--checkpoint', type=str, default=None,
-	                    help='Path to DQN checkpoint .pt file (required when --strategy=dqn)')
-	parser.add_argument('--hybrid_mode', action=argparse.BooleanOptionalAction, default=True,
-	                    help='(DQN only) Fall back to A* when any ghost is within 2 tiles (default: on)')
+	                    help='Path to DQN checkpoint .pt file (required for dqn or hybrid)')
 	parser.add_argument('--competition_mode', action=argparse.BooleanOptionalAction, default=True,
 	                    help='Suppress sending location updates to the game server (for physical competition use)')
 	parser.add_argument('--force_no_bot', action='store_true',
 	                    help='Skip robot socket connection (simulate without physical bot)')
 	args = parser.parse_args(argv)
-	if args.strategy == 'dqn' and not args.checkpoint:
-		parser.error('--checkpoint is required when --strategy=dqn')
+	if args.strategy in ('dqn', 'hybrid') and not args.checkpoint:
+		parser.error(f'--checkpoint is required when --strategy={args.strategy}')
 	if args.force_no_bot:
 		args.competition_mode = False
 	return args
 
 
 def make_decision_module(args: argparse.Namespace, state: GameState) -> object:
-	if args.strategy == 'dqn':
+	if args.strategy in ('dqn', 'hybrid'):
 		from dqn_module import DQNDecisionModule
 		return DQNDecisionModule(state, args.checkpoint, args.debug,
-		                        hybrid_mode=args.hybrid_mode,
+		                        hybrid_mode=(args.strategy == 'hybrid'),
 		                        force_no_bot=args.force_no_bot)
 	return DecisionModule(state, args.debug, force_no_bot=args.force_no_bot)
 

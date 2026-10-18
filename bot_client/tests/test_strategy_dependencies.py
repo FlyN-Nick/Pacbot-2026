@@ -46,7 +46,26 @@ assert low_level.s is None
         dqn_module = SimpleNamespace(DQNDecisionModule=constructor)
         args = SimpleNamespace(
             strategy="dqn", checkpoint="/tmp/model.ckpt", debug=False,
-            hybrid_mode=True, force_no_bot=False,
+            force_no_bot=False,
+        )
+        with patch.dict(sys.modules, {"dqn_module": dqn_module}):
+            state = object()
+            result = pacbotClient.make_decision_module(args, state)
+        self.assertIs(result, sentinel)
+        constructor.assert_called_once_with(
+            state, "/tmp/model.ckpt", False,
+            hybrid_mode=False, force_no_bot=False,
+        )
+
+    def test_hybrid_strategy_enables_astar_fallback(self):
+        import pacbotClient
+
+        sentinel = object()
+        constructor = Mock(return_value=sentinel)
+        dqn_module = SimpleNamespace(DQNDecisionModule=constructor)
+        args = SimpleNamespace(
+            strategy="hybrid", checkpoint="/tmp/model.ckpt", debug=False,
+            force_no_bot=False,
         )
         with patch.dict(sys.modules, {"dqn_module": dqn_module}):
             state = object()
