@@ -2,15 +2,13 @@
 
 This is the software used at competition for Columbia University Robotics Club's PacBot.
 
-Clone the repo with `git clone --recurse-submodules https://github.com/FlyN-Nick/Pacbot-2026.git`.
-
-Then run the one-time setup from the repository root (on Windows, use Git Bash):
+Clone the repo, then run the one-time setup from the repository root (on Windows, use Git Bash):
 
 ```sh
+git clone --recurse-submodules https://github.com/FlyN-Nick/Pacbot-2026.git
+cd Pacbot-2026
 sh scripts/setup.sh
 ```
-
-This turns on the hooks in `.githooks/`, which keep the `curc-pacbot-rl/` submodule at the commit this repo expects every time you pull or switch branches. They leave it alone while you're working on RL code: on your own branch, with unpushed commits, or with uncommitted edits. The setup also adds a `git bump-rl` command (see [RL models](#working-on-a-component)). If you skip the setup, run `git submodule update` after each pull. Either way, the bot client warns at startup when `curc-pacbot-rl/` doesn't match the expected commit.
 
 ## What's in the repository
 
