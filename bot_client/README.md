@@ -29,5 +29,6 @@ Other useful files:
 
 - `decisionModule.py`: A* decision module with an asynchronous loop and game state locking
 - `dqn_module.py`: DQN decision module
+- `pacbotAgent.py`: upstream's minimal agent template (not used by this client)
 - `gameState.py`: parsed game state and prediction helpers
 - `walls.py`: binary maze walls, matching `initWalls` in the server

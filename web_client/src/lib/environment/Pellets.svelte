@@ -60,6 +60,12 @@
     cursor: auto;
   }
 
+  /* Intersection */
+
+  .intersection {
+    background-color: rgba(255,255,0,0.5);
+  }
+
   /* Super pellet */
 
   .grid-element .super {
@@ -81,6 +87,8 @@
   export let gridSize;
   export let pelletGrid;
   export let botSocket;
+  export let intersectionGrid;
+  export let showIntersections;
 
   let innerWidth = 0
   let innerHeight = 0
@@ -92,6 +100,7 @@
 
   const pelletMods = [' hidden', '', ' super']
 
+  $: intersectionMods = ['', showIntersections ? ' intersection' : '']
   $: pellet_size = ~~(gridSize/6 + 0.5)
 
 </script>
@@ -105,7 +114,7 @@
         <button
           on:click={() => hello(i, j)}
           id={`grid-element-${i}-${j}`}
-          class={'grid-element' + pelletMods[pelletGrid[i][j]]}
+          class={'grid-element' + pelletMods[pelletGrid[i][j]] + intersectionMods[intersectionGrid[i][j]]}
           style:--grid-size='{gridSize}px'
         >
           <span
