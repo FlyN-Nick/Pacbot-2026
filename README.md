@@ -118,3 +118,12 @@ If the upload can't find the board, hold BOOTSEL while plugging in USB and copy 
 - **Game visualizer:** [web client README](web_client/README.md). `npm run host` exposes Vite on the network; `npm run prod` creates a static build.
 - **Robot firmware:** [`low_level/RPiPacBot/`](low_level/RPiPacBot/), including the [UDP protocol](low_level/RPiPacBot/PROTOCOL.md) and [driving behavior](low_level/RPiPacBot/DRIVING.md).
 - **Robot dashboard:** [`dashboard/server/`](dashboard/server/) and [`dashboard/webapp/`](dashboard/webapp/).
+- **RL models:** [`curc-pacbot-rl/`](curc-pacbot-rl/) is a submodule that tracks its `main` branch. Push your RL changes first, then update the pointer to the latest RL `main` from the repository root:
+
+  ```sh
+  git submodule update --remote --merge curc-pacbot-rl
+  git add curc-pacbot-rl
+  git commit -m "chore: update rl submodule pointer"
+  ```
+
+  After pulling, `git submodule update` checks out the commit that Pacbot-2026 currently records.
