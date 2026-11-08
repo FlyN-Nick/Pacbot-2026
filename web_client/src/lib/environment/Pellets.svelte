@@ -62,8 +62,14 @@
 
   /* Intersection */
 
+  /* A ring rather than a fill, so it shows through the bot's cell colors */
   .intersection {
-    background-color: rgba(255,255,0,0.5);
+    box-shadow: inset 0 0 0 2px rgba(255,255,0,0.8);
+  }
+
+  /* The bot's planned path (.path, added at runtime) takes precedence */
+  .intersection:global(.path) {
+    box-shadow: none;
   }
 
   /* Super pellet */
