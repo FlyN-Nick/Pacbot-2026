@@ -82,6 +82,35 @@ Open <http://localhost:8765>. For frontend development with Vite’s hot reload,
 
 The dashboard can also use a Unix domain socket for local direction-command IPC. See the backend flags (`go run . -h`) and [`dashboard/`](dashboard/) for implementation details. Hardware Wi-Fi and UDP settings are configured in the firmware; see the [robot protocol](low_level/RPiPacBot/PROTOCOL.md).
 
+To drive from the dashboard, hold the arrow keys or WASD. Hold two keys at once to move diagonally, use Q/E to spin, and press Space to stop. Press M to switch between manual and cardinal (heading-locked) mode.
+
+## Flash the robot firmware
+
+The robot is a Raspberry Pi Pico 2 W running an Arduino sketch. Install [arduino-cli](https://arduino.github.io/arduino-cli/latest/installation/) (`brew install arduino-cli` on macOS), then the board package and libraries:
+
+```sh
+arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+arduino-cli core update-index
+arduino-cli core install rp2040:rp2040
+arduino-cli lib install VL6180X "Adafruit BNO055" "Adafruit Unified Sensor"
+```
+
+Wi-Fi credentials are kept out of git. Copy the template and fill in a 2.4 GHz network. The template's default is the club's `MdrcPacbot` router:
+
+```sh
+cd low_level/RPiPacBot
+cp wifi_secrets.example.h wifi_secrets.h
+```
+
+Compile and flash over USB (find the port with `arduino-cli board list`):
+
+```sh
+arduino-cli compile --fqbn rp2040:rp2040:rpipico2w --output-dir build .
+arduino-cli upload --fqbn rp2040:rp2040:rpipico2w -p <port> --input-dir build .
+```
+
+If the upload can't find the board, hold BOOTSEL while plugging in USB and copy `build/RPiPacBot.ino.uf2` to the `RP2350` drive. On recent macOS, allow the USB accessory when prompted. The robot finds the dashboard on the network automatically; see the [robot protocol](low_level/RPiPacBot/PROTOCOL.md#server-discovery).
+
 ## Working on a component
 
 - **Game server:** [server README](server/README.md), [`server/game/`](server/game/), and [`config.json`](config.json).

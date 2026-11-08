@@ -171,6 +171,19 @@ Stop continuous sensor logging. Returns to SETUP_DONE state.
 |--------|------|-------|-------------|
 | 0      | 1    | type  | `0x1A`      |
 
+## Server Discovery
+
+Unless `SERVER_IP` is defined in `wifi_secrets.h`, the Pi sends to the subnet broadcast
+address after joining Wi-Fi. The first packet it receives from port `SERVER_PORT` (9000)
+fixes the server's IP until the next Wi-Fi reconnect. The dashboard replies to a newly
+seen robot with CMD_PING so this happens immediately.
+
+## Manual-Mode Watchdog
+
+In manual drive mode, if any motor is running and no CMD_SET_MOTOR/CMD_SET_MOTORS arrives
+for 500 ms, the Pi stops all motors. Clients that drive manually must resend the current
+motor command while it should stay active (the dashboard resends every 100 ms).
+
 ## State Machine
 
 ```
