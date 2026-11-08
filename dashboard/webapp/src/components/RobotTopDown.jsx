@@ -93,7 +93,11 @@ function draw(canvas, sensors, direction) {
 
   // Direction arrow
   if (direction) {
-    const dirs = { forward: -90, backward: 90, left: 180, right: 0 };
+    const dirs = {
+      forward: -90, backward: 90, left: 180, right: 0,
+      'forward-left': -135, 'forward-right': -45,
+      'backward-left': 135, 'backward-right': 45,
+    };
     const aRad = dirs[direction] * Math.PI / 180;
     const arrowLen = 25 * scale;
     const ax = cx + Math.cos(aRad) * arrowLen;

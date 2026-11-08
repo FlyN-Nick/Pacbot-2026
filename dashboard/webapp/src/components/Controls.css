@@ -85,6 +85,24 @@
   font-size: 14px !important;
 }
 
+.dpad button {
+  touch-action: none;
+  user-select: none;
+}
+
+.dpad button:disabled {
+  color: #333;
+  border-color: #222;
+  cursor: not-allowed;
+}
+
+.key-hint {
+  margin: 0 0 12px;
+  color: #888;
+  font-size: 11px;
+  text-align: center;
+}
+
 .sliders {
   display: flex;
   flex-direction: column;

@@ -1,140 +1,155 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { heldToCommand, mixMotors, directionLabel } from '../driveMix';
 import './Controls.css';
 
-const MOTOR_CONFIG = {
-  forward:    [1,  0,  0, -1],
-  backward:   [-1, 0,  0,  1],
-  left:       [0,  1,  1,  0],
-  right:      [0, -1, -1,  0],
-  rotate_ccw: [1,  1, -1,  1],
-  rotate_cw:  [-1, -1, 1, -1],
+// Keyboard key -> logical drive key. Held keys drive; releasing stops.
+const KEY_MAP = {
+  arrowup: 'up', w: 'up',
+  arrowdown: 'down', s: 'down',
+  arrowleft: 'left', a: 'left',
+  arrowright: 'right', d: 'right',
+  q: 'ccw', e: 'cw',
 };
 
 const DIR_CODES = { stop: 0, north: 1, east: 2, south: 3, west: 4 };
 
-const ACTION_TO_CARDINAL = {
+const LABEL_TO_CARDINAL = {
   forward: 'north', backward: 'south', left: 'west', right: 'east',
 };
 
-export default function Controls({ activeDirection, onDirectionChange, send }) {
+// The firmware stops manual motors after 500 ms of silence, so resend while moving.
+const RESEND_MS = 100;
+
+// D-pad layout: [label, logical keys]. Diagonals hold two keys at once.
+const PAD = [
+  [['↖', ['up', 'left']], ['↑', ['up']], ['↗', ['up', 'right']]],
+  [['←', ['left']], null, ['→', ['right']]],
+  [['↙', ['down', 'left']], ['↓', ['down']], ['↘', ['down', 'right']]],
+];
+
+function isTextInput(el) {
+  if (el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && el.type !== 'range';
+}
+
+// Logical keys -> the websocket message for the current mode.
+function buildMessage(held, cardinalMode, speed) {
+  const cmd = heldToCommand(held);
+  if (cardinalMode) {
+    // Cardinal mode only supports the four directions; diagonals and spin stop.
+    const label = cmd.rot === 0 ? directionLabel(cmd) : null;
+    const cardinal = LABEL_TO_CARDINAL[label] ?? 'stop';
+    const code = DIR_CODES[cardinal];
+    return {
+      label: code === 0 ? null : label,
+      moving: code !== 0 && speed > 0,
+      msg: { type: "cardinal_move", direction: code, speed: code === 0 ? 0 : speed },
+    };
+  }
+  const speeds = mixMotors(cmd, speed);
+  return {
+    label: directionLabel(cmd),
+    moving: speeds.some(s => s !== 0),
+    msg: { type: "set_motors", speeds },
+  };
+}
+
+export default function Controls({ onDirectionChange, send }) {
   const [speed, setSpeed] = useState(128);
   const [cardinalMode, setCardinalMode] = useState(false);
+  const [held, setHeld] = useState(() => new Set());
+  const wasMovingRef = useRef(false);
 
-  const sendManualMotors = useCallback((action, spd) => {
-    if (action === 'stop') {
-      send({ type: "set_motors", speeds: [0, 0, 0, 0] });
-      return;
-    }
-    const mults = MOTOR_CONFIG[action];
-    if (!mults) return;
-    const speeds = mults.map(m => Math.max(-255, Math.min(255, Math.round(m * spd))));
-    send({ type: "set_motors", speeds });
-  }, [send]);
+  const press = useCallback((keys) => {
+    setHeld(prev => {
+      if (keys.every(k => prev.has(k))) return prev;
+      return new Set([...prev, ...keys]);
+    });
+  }, []);
 
-  const sendCardinalMove = useCallback((dir, spd) => {
-    const code = DIR_CODES[dir] ?? 0;
-    send({ type: "cardinal_move", direction: code, speed: code === 0 ? 0 : spd });
-  }, [send]);
+  const release = useCallback((keys) => {
+    setHeld(prev => {
+      if (!keys.some(k => prev.has(k))) return prev;
+      const next = new Set(prev);
+      keys.forEach(k => next.delete(k));
+      return next;
+    });
+  }, []);
 
-  const setDirection = useCallback((dir) => {
-    onDirectionChange(dir);
-    if (cardinalMode) {
-      const cd = ACTION_TO_CARDINAL[dir];
-      if (cd) sendCardinalMove(cd, speed);
-    } else {
-      sendManualMotors(dir, speed);
-    }
-  }, [onDirectionChange, cardinalMode, sendManualMotors, sendCardinalMove, speed]);
-
-  const rotate = useCallback((action) => {
-    if (cardinalMode) return;
-    onDirectionChange(null);
-    sendManualMotors(action, speed);
-  }, [cardinalMode, onDirectionChange, sendManualMotors, speed]);
+  // Send on every change, then keep resending while moving.
+  useEffect(() => {
+    const { label, moving, msg } = buildMessage(held, cardinalMode, speed);
+    onDirectionChange(label);
+    if (moving || wasMovingRef.current) send(msg);
+    wasMovingRef.current = moving;
+    if (!moving) return;
+    const id = setInterval(() => send(msg), RESEND_MS);
+    return () => clearInterval(id);
+  }, [held, cardinalMode, speed, send, onDirectionChange]);
 
   const stop = useCallback(() => {
-    onDirectionChange(null);
-    if (cardinalMode) {
-      sendCardinalMove('stop', 0);
-    } else {
-      sendManualMotors('stop', 0);
-    }
-  }, [onDirectionChange, cardinalMode, sendManualMotors, sendCardinalMove]);
+    setHeld(new Set());
+    send(cardinalMode
+      ? { type: "cardinal_move", direction: 0, speed: 0 }
+      : { type: "set_motors", speeds: [0, 0, 0, 0] });
+  }, [send, cardinalMode]);
 
   const toggleMode = useCallback(() => {
     const newMode = !cardinalMode;
+    setHeld(new Set());
     setCardinalMode(newMode);
     send({ type: "set_drive_mode", mode: newMode ? 1 : 0 });
-    onDirectionChange(null);
-    if (newMode) {
-      sendCardinalMove('stop', 0);
-    } else {
-      sendManualMotors('stop', 0);
-    }
-  }, [cardinalMode, send, onDirectionChange, sendCardinalMove, sendManualMotors]);
+  }, [cardinalMode, send]);
 
   const calibrate = useCallback(() => {
     send({ type: "calibrate" });
   }, [send]);
 
-  const changeSpeed = useCallback((newSpeed) => {
-    setSpeed(newSpeed);
-    if (activeDirection) {
-      if (cardinalMode) {
-        const cd = ACTION_TO_CARDINAL[activeDirection];
-        if (cd) sendCardinalMove(cd, newSpeed);
-      } else {
-        sendManualMotors(activeDirection, newSpeed);
-      }
-    }
-  }, [activeDirection, cardinalMode, sendManualMotors, sendCardinalMove]);
-
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.target.tagName === "INPUT") return;
-      switch (e.key.toLowerCase()) {
-        case "w": setDirection("forward"); break;
-        case "a": setDirection("left"); break;
-        case "x": stop(); break;
-        case "d": setDirection("right"); break;
-        case "s": setDirection("backward"); break;
-        case "q": rotate("rotate_ccw"); break;
-        case "e": rotate("rotate_cw"); break;
+      if (isTextInput(e.target)) return;
+      const key = e.key.toLowerCase();
+      const logical = KEY_MAP[key];
+      if (logical) {
+        e.preventDefault();
+        press([logical]);
+        return;
+      }
+      if (e.repeat) return;
+      switch (key) {
+        case " ":
+        case "x": e.preventDefault(); stop(); break;
         case "m": toggleMode(); break;
         case "+":
-        case "=":
-          setSpeed(prev => {
-            const next = Math.min(255, prev + 10);
-            if (activeDirection) {
-              if (cardinalMode) {
-                const cd = ACTION_TO_CARDINAL[activeDirection];
-                if (cd) sendCardinalMove(cd, next);
-              } else {
-                sendManualMotors(activeDirection, next);
-              }
-            }
-            return next;
-          });
-          break;
-        case "-":
-          setSpeed(prev => {
-            const next = Math.max(0, prev - 10);
-            if (activeDirection) {
-              if (cardinalMode) {
-                const cd = ACTION_TO_CARDINAL[activeDirection];
-                if (cd) sendCardinalMove(cd, next);
-              } else {
-                sendManualMotors(activeDirection, next);
-              }
-            }
-            return next;
-          });
-          break;
+        case "=": setSpeed(prev => Math.min(255, prev + 10)); break;
+        case "-": setSpeed(prev => Math.max(0, prev - 10)); break;
       }
     }
+    function onKeyUp(e) {
+      const logical = KEY_MAP[e.key.toLowerCase()];
+      if (logical) release([logical]);
+    }
+    // Keyups are lost when the window loses focus, so stop instead.
+    function onBlur() { setHeld(new Set()); }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [setDirection, stop, rotate, toggleMode, activeDirection, cardinalMode, sendManualMotors, sendCardinalMove]);
+    document.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [press, release, stop, toggleMode]);
+
+  // Buttons drive while pressed, like the keys.
+  const holdProps = (keys) => ({
+    className: keys.every(k => held.has(k)) ? "active" : "",
+    onPointerDown: (e) => { e.currentTarget.setPointerCapture(e.pointerId); press(keys); },
+    onPointerUp: () => release(keys),
+    onPointerCancel: () => release(keys),
+  });
+
+  const isDiagonal = (keys) => keys.length > 1;
 
   return (
     <div className="panel controls-panel">
@@ -158,59 +173,47 @@ export default function Controls({ activeDirection, onDirectionChange, send }) {
       </div>
       <div className="direction-controls">
         <div className="dpad">
+          {PAD.map((row, r) => (
+            <div className="dir-row" key={r}>
+              {row.map((cell, c) => {
+                if (!cell) {
+                  return (
+                    <button key={c} className={held.size === 0 ? "active" : ""} onClick={stop}>
+                      STOP
+                    </button>
+                  );
+                }
+                const [label, keys] = cell;
+                const disabled = cardinalMode && isDiagonal(keys);
+                return (
+                  <button key={c} disabled={disabled} {...holdProps(keys)}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
           <div className="dir-row">
-            {!cardinalMode && (
-              <button className="rot-btn" onClick={() => rotate("rotate_ccw")}>
-                Q &#8634;
-              </button>
-            )}
-            <button
-              className={activeDirection === "forward" ? "active" : ""}
-              onClick={() => setDirection("forward")}
-            >
-              W &uarr;
+            <button className="rot-btn" disabled={cardinalMode} {...holdProps(['ccw'])}>
+              Q &#8634;
             </button>
-            {!cardinalMode && (
-              <button className="rot-btn" onClick={() => rotate("rotate_cw")}>
-                E &#8635;
-              </button>
-            )}
-          </div>
-          <div className="dir-row">
-            <button
-              className={activeDirection === "left" ? "active" : ""}
-              onClick={() => setDirection("left")}
-            >
-              &larr; A
-            </button>
-            <button
-              className={activeDirection === null ? "active" : ""}
-              onClick={stop}
-            >
-              X STOP
-            </button>
-            <button
-              className={activeDirection === "right" ? "active" : ""}
-              onClick={() => setDirection("right")}
-            >
-              D &rarr;
+            <button className="rot-btn" disabled={cardinalMode} {...holdProps(['cw'])}>
+              E &#8635;
             </button>
           </div>
-          <button
-            className={activeDirection === "backward" ? "active" : ""}
-            onClick={() => setDirection("backward")}
-          >
-            S &darr;
-          </button>
         </div>
       </div>
+      <p className="key-hint">
+        Hold arrows/WASD to drive{cardinalMode ? '' : ', two at once for diagonals, Q/E to spin'}.
+        Space stops. M switches mode.
+      </p>
       <div className="sliders">
         <label>
           SPEED <span>{speed}</span>
           <input
             type="range" min="0" max="255" step="1"
             value={speed}
-            onChange={(e) => changeSpeed(parseInt(e.target.value))}
+            onChange={(e) => setSpeed(parseInt(e.target.value))}
           />
         </label>
       </div>
