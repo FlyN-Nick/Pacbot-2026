@@ -264,11 +264,28 @@ async def main(args: argparse.Namespace):
 	loop.stop()
 
 
+def report_rl_checkout() -> None:
+	'''
+	Warn if curc-pacbot-rl doesn't match what Pacbot-2026 records
+	(see submoduleCheck.py); deliberate RL branches are used as-is.
+	'''
+	from pathlib import Path
+	from submoduleCheck import check_rl_checkout
+
+	result = check_rl_checkout(Path(__file__).resolve().parents[1])
+	if result is None:
+		return
+	level, message = result
+	color = YELLOW if level == 'warning' else CYAN
+	print(f'{color}[RL] {message}{NORMAL}')
+
+
 def run() -> None:
 	import signal
 	import low_level
 
 	args = parse_args()
+	report_rl_checkout()
 	signal.signal(signal.SIGINT, signal.SIG_DFL)
 	low_level.connect(force_no_bot=args.force_no_bot)
 	asyncio.run(main(args))
