@@ -1,0 +1,4 @@
+#!/bin/sh
+# After switching branches or commits (not file checkouts): sync curc-pacbot-rl.
+[ "$3" = 1 ] || exit 0
+exec sh "$(dirname "$0")/sync-rl-submodule"

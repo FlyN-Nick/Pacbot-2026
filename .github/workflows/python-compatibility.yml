@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - "bot_client/**"
+      - ".githooks/**"
+      - "scripts/**"
       - ".github/workflows/python-compatibility.yml"
   pull_request:
     paths:
       - "bot_client/**"
+      - ".githooks/**"
+      - "scripts/**"
       - ".github/workflows/python-compatibility.yml"
 
 jobs:

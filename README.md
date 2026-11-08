@@ -4,6 +4,14 @@ This is the software used at competition for Columbia University Robotics Club's
 
 Clone the repo with `git clone --recurse-submodules https://github.com/FlyN-Nick/Pacbot-2026.git`.
 
+Then run the one-time setup from the repository root (on Windows, use Git Bash):
+
+```sh
+sh scripts/setup.sh
+```
+
+This turns on the hooks in `.githooks/`, which keep the `curc-pacbot-rl/` submodule at the commit this repo expects every time you pull or switch branches. They leave it alone while you're working on RL code: on your own branch, with unpushed commits, or with uncommitted edits. The setup also adds a `git bump-rl` command (see [RL models](#working-on-a-component)). If you skip the setup, run `git submodule update` after each pull. Either way, the bot client warns at startup when `curc-pacbot-rl/` doesn't match the expected commit.
+
 ## What's in the repository
 
 | Directory | Purpose | Main technologies |
@@ -118,12 +126,10 @@ If the upload can't find the board, hold BOOTSEL while plugging in USB and copy 
 - **Game visualizer:** [web client README](web_client/README.md). `npm run host` exposes Vite on the network; `npm run prod` creates a static build.
 - **Robot firmware:** [`low_level/RPiPacBot/`](low_level/RPiPacBot/), including the [UDP protocol](low_level/RPiPacBot/PROTOCOL.md) and [driving behavior](low_level/RPiPacBot/DRIVING.md).
 - **Robot dashboard:** [`dashboard/server/`](dashboard/server/) and [`dashboard/webapp/`](dashboard/webapp/).
-- **RL models:** [`curc-pacbot-rl/`](curc-pacbot-rl/) is a submodule that tracks its `main` branch. Push your RL changes first, then update the pointer to the latest RL `main` from the repository root:
+- **RL models:** [`curc-pacbot-rl/`](curc-pacbot-rl/) is a submodule that tracks its `main` branch. You can work on RL code in place: `cd curc-pacbot-rl`, switch to your branch, and commit and push there as usual. The bot imports the model package straight from that folder (an editable install) and reads checkpoints from it, so it uses whatever you have checked out, including uncommitted edits. Run `uv sync` again only if the model package's dependencies change. To update the pointer to the latest RL `main`, push your RL changes first, then run `git bump-rl` from the repository root. Without the setup, run the same steps by hand:
 
   ```sh
   git submodule update --remote --merge curc-pacbot-rl
   git add curc-pacbot-rl
   git commit -m "chore: update rl submodule pointer"
   ```
-
-  After pulling, `git submodule update` checks out the commit that Pacbot-2026 currently records.

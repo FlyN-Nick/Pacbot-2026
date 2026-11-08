@@ -1,0 +1,3 @@
+#!/bin/sh
+# After git pull (merge) or git merge: sync curc-pacbot-rl.
+exec sh "$(dirname "$0")/sync-rl-submodule"
