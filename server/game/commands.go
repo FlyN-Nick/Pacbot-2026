@@ -9,6 +9,11 @@ import (
 // Convert byte messages from clients into commands to the game state
 func (gs *gameState) interpretCommand(msg []byte) bool {
 
+	// Ignore empty messages (there is no command byte to read)
+	if len(msg) == 0 {
+		return false
+	}
+
 	// Log the command if necessary
 	if getCommandLogEnable() {
 		if len(msg) > 1 {

@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"pacbot_server/game"
 	"pacbot_server/webserver"
+	"strings"
 	"sync"
 	"time"
 )
@@ -59,16 +62,28 @@ func main() {
 	// Set the enable for game command logging to be false by default
 	game.SetCommandLogEnable(false)
 
-	// Keep the game engine alive until a user types 'q'
-	var input string
+	// Keep the game engine alive until a user types 'q', forwarding other
+	// console lines to the game engine as commands
 	fmt.Println("Ready")
-	for {
-		fmt.Scanf("%s\n", &input) // Blocking I/O to keep the program alive
-		if input == "q" {         // Quit signal
-			break
-		} else {
-			webResponseCh <- []byte(input)
+	scanner := bufio.NewScanner(os.Stdin)
+	quit := false
+	for scanner.Scan() {
+		input := strings.TrimSpace(scanner.Text())
+		if input == "" { // Empty line: nothing to send
+			continue
 		}
+		if input == "q" { // Quit signal
+			quit = true
+			break
+		}
+		webResponseCh <- []byte(input)
+	}
+
+	// Without a console (stdin closed, e.g. running in the background), keep
+	// serving until the process is stopped
+	if !quit {
+		log.Println("\033[35mLOG:  No console input; serving until stopped\033[0m")
+		select {}
 	}
 
 	// Shutdown HTTP server to prevent new and finish old connections
