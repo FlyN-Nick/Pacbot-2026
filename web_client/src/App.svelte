@@ -154,8 +154,8 @@
     ghostsHidden = false;
   }
 
-  function runSequence(kind, lastLife = false) {
-    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife }));
+  function runSequence(kind, { lastLife = false, serverPauses = false } = {}) {
+    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses }));
   }
 
   // Carry out one step of an arcade sequence (lib/arcadeSequencer.js)
@@ -287,7 +287,9 @@
       if (event.type === 'lifeLost') {
         timeline.anchor('pacmanCaught');
         catchFrame = latestFrame;
-        runSequence('death', frame.lives === 0);
+        // A real death removes Pac-Man from the board and the server pauses itself
+        const pacmanRemoved = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) !== 0;
+        runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
       }
       if (event.type === 'gameOver') audioController.stopAll();
       if (event.type === 'ghostEaten') {
@@ -965,6 +967,10 @@
   }
 
   const toggleReset = () => {
+    // A reset always wins over a running arcade sequence
+    runner.cancel();
+    clearSequenceDisplay();
+    startRequested = false;
     sendToSocket('R');
   }
 

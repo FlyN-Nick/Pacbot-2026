@@ -13,12 +13,14 @@ function startSteps(mode, timings) {
   return steps;
 }
 
-function deathSteps(mode, timings, lastLife) {
+function deathSteps(mode, timings, lastLife, serverPauses) {
   if (mode !== 'arcade') return [{ atMs: 0, action: 'deathStart' }];
   const animationAt = timings.deathFreezeMs;
   const steps = [
-    // The server pauses itself after a real death; the debug `k` command doesn't.
-    { atMs: 0, action: 'hold' },
+    // A real death pauses the server one update later, during the freeze. Holding
+    // first would leave that pending pause to stop the game right after the resume,
+    // so hold only for deaths the server won't pause for (the debug `k` command).
+    ...(serverPauses ? [] : [{ atMs: 0, action: 'hold' }]),
     { atMs: 0, action: 'freezeDisplay' },
     { atMs: animationAt, action: 'releaseDisplay' },
     { atMs: animationAt, action: 'deathStart' },
@@ -36,16 +38,17 @@ function deathSteps(mode, timings, lastLife) {
 
 /**
  * Steps for a sequence: kind is 'start', 'startDetected' (another client
- * resumed the server) or 'death'. Steps are ordered by atMs.
+ * resumed the server) or 'death'. Steps are ordered by atMs. serverPauses: the
+ * server will pause itself for this death (Pac-Man was removed from the board).
  */
-export function planSequence({ kind, mode, timings, lastLife = false }) {
+export function planSequence({ kind, mode, timings, lastLife = false, serverPauses = false }) {
   switch (kind) {
     case 'start': return startSteps(mode, timings);
     case 'startDetected': {
       const steps = startSteps(mode, timings);
       return mode === 'arcade' ? [{ atMs: 0, action: 'hold' }, ...steps] : steps;
     }
-    case 'death': return deathSteps(mode, timings, lastLife);
+    case 'death': return deathSteps(mode, timings, lastLife, serverPauses);
     default: throw new Error(`unknown sequence: ${kind}`);
   }
 }

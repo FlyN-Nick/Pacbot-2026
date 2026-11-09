@@ -131,3 +131,10 @@ test('the runner is running until its last step', () => {
   clock.advance(1);
   assert.equal(runner.running, false);
 });
+
+test('an arcade death the server pauses for itself is not held again', () => {
+  // The server's pause after a real death comes one update later; holding first
+  // would leave its pending pause to stop the game again right after the resume.
+  const steps = planSequence({ kind: 'death', mode: 'arcade', timings: T, serverPauses: true });
+  assert.deepEqual(steps, plan('death', 'arcade').filter(({ action }) => action !== 'hold'));
+});
