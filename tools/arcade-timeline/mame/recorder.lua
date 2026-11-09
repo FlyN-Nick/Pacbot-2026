@@ -248,7 +248,10 @@ subscription = emu.add_machine_frame_notifier(function()
     done = seen("musicEnded") and started and frame >= started + 60
   elseif scenario == "death" then
     local ended = seen("deathEnded")
-    done = ended and ((lastSeen("readyShown") or 0) > ended or frame > ended + 600)
+    -- Play resumes (gameStarted) after the READY that follows the death
+    local ready = lastSeen("readyShown")
+    local resumed = ended and ready and ready > ended and (lastSeen("gameStarted") or 0) > ready
+    done = ended and (resumed or frame > ended + 900)
   elseif scenario == "fright" then
     local ended = seen("frightEnded")
     done = (ended and frame > ended + 30) or seen("pacmanCaught")

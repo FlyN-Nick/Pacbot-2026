@@ -6,13 +6,14 @@
 //   pause         holds the game; matches the arcade in arcade mode, must be zero in competition mode
 //   presentation  sound and animation that never hold the game; matches the arcade in both modes
 
-// Event-to-event durations. Tolerance kinds are defined by toleranceFor() in compare.mjs.
+// Event-to-event durations. `after: type` matches only events at or after the first event of that type. Tolerance kinds are defined by toleranceFor() in compare.mjs.
 export const GAPS = [
   { key: 'start.readyToGameStarted', category: 'pause', scenario: 'start', from: { type: 'readyShown' }, to: { type: 'gameStarted' }, tolerance: 'tick' },
   { key: 'start.musicLength', category: 'presentation', scenario: 'start', from: { type: 'musicStarted' }, to: { type: 'musicEnded' }, tolerance: 'audio' },
   { key: 'death.caughtToFirstFrame', category: 'pause', scenario: 'death', from: { type: 'pacmanCaught' }, to: { type: 'deathFrame', frame: 1 }, tolerance: 'animation' },
   { key: 'death.animationLength', category: 'presentation', scenario: 'death', from: { type: 'deathFrame', frame: 1 }, to: { type: 'deathEnded' }, tolerance: 'animation' },
-  { key: 'death.endToReady', category: 'pause', scenario: 'death', from: { type: 'deathEnded' }, to: { type: 'readyShown' }, tolerance: 'tick' },
+  { key: 'death.endToReady', category: 'pause', scenario: 'death', from: { type: 'deathEnded' }, to: { type: 'readyShown', after: 'deathEnded' }, tolerance: 'tick' },
+  { key: 'death.readyToResume', category: 'pause', scenario: 'death', from: { type: 'readyShown', after: 'deathEnded' }, to: { type: 'gameStarted', after: 'deathEnded' }, tolerance: 'tick' },
   { key: 'ghostEaten.toPopup', category: 'presentation', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'scorePopupShown' }, tolerance: 'animation' },
   { key: 'ghostEaten.freeze', category: 'pause', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'actorMoved' }, tolerance: 'tick' },
   { key: 'ghostEaten.toFlash', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightFlashStart', flash: 1 }, tolerance: 'tick' },
@@ -35,4 +36,4 @@ export const SIREN = { scenario: 'siren', type: 'sirenStep', category: 'presenta
 
 // Events the visualizer does not produce yet. Measurements that need one are
 // reported as "not implemented"; remove a type here once the visualizer emits it.
-export const GUI_NOT_IMPLEMENTED = new Set(['sirenStep', 'mazeFlash', 'eyesSoundStarted', 'eyesSoundEnded']);
+export const GUI_NOT_IMPLEMENTED = new Set(['mazeFlash', 'eyesSoundStarted', 'eyesSoundEnded']);

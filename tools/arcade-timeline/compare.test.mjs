@@ -44,10 +44,10 @@ test('a gap using an event the GUI does not produce yet is not implemented', () 
 test('reference keys the GUI cannot produce yet do not stop the report', () => {
   const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
   const rows = compareTimelines({
-    reference: { 'siren.step1.pelletsRemaining': ref(64, 'count'), 'start.readyToGameStarted': ref(4.27) },
+    reference: { 'levelComplete.flashCount': ref(4, 'count'), 'start.readyToGameStarted': ref(4.27) },
     gui, gameFps: 24,
   });
-  assert.equal(row(rows, 'siren.step1.pelletsRemaining').status, 'not implemented');
+  assert.equal(row(rows, 'levelComplete.flashCount').status, 'not implemented');
   assert.equal(row(rows, 'start.readyToGameStarted').status, 'fail');
 });
 
@@ -173,4 +173,32 @@ test('the READY movement check does not apply in competition mode', () => {
   ])];
   const check = row(compareTimelines({ reference: {}, gui, gameFps: 24, mode: 'competition' }), 'start.noMovementDuringReady');
   assert.equal(check.status, 'not applicable');
+});
+
+const deathEvents = [
+  { t: 0, type: 'readyShown' }, { t: 1, type: 'gameStarted' }, { t: 2, type: 'pacmanCaught' },
+  { t: 3, type: 'deathFrame', frame: 1 }, { t: 4, type: 'deathEnded' },
+  { t: 5, type: 'readyShown' }, { t: 7, type: 'gameStarted' },
+];
+
+test('post-death READY is measured from the READY after the death', () => {
+  const reduced = reduceTimeline(timeline('death', deathEvents));
+  assert.equal(reduced['death.readyToResume'].value, 2);
+  assert.equal(reduced['death.endToReady'].value, 1);
+});
+
+test('post-death READY rows do not apply in competition mode', () => {
+  const reference = { 'death.endToReady': ref(1), 'death.readyToResume': ref(2) };
+  const gui = [timeline('death', deathEvents)];
+  const competition = compareTimelines({ reference, gui, gameFps: 24, mode: 'competition' });
+  assert.equal(row(competition, 'death.endToReady').status, 'not applicable');
+  assert.equal(row(competition, 'death.readyToResume').status, 'not applicable');
+  const arcade = compareTimelines({ reference, gui, gameFps: 24, mode: 'arcade' });
+  assert.equal(row(arcade, 'death.endToReady').status, 'pass');
+  assert.equal(row(arcade, 'death.readyToResume').status, 'pass');
+});
+
+test('the GUI now produces siren steps', async () => {
+  const { GUI_NOT_IMPLEMENTED } = await import('./gaps.mjs');
+  assert.equal(GUI_NOT_IMPLEMENTED.has('sirenStep'), false);
 });

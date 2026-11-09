@@ -82,6 +82,7 @@ async function runScenario(scenario, page, send) {
       const live = () => { if (signal.aborted) throw new Error('scenario cancelled'); };
       const ctx = {
         send: (cmd) => { live(); send(cmd); },
+        press: (key) => { live(); return page.keyboard.press(key); },
         moveTo: (row, col) => ctx.send('x' + String.fromCharCode(row) + String.fromCharCode(col)),
         frame: () => { live(); return page.evaluate(() => window.__arcadeTimeline.frame()); },
         hasEvent: async (type) => { live(); return (await events()).some((event) => event.type === type); },
@@ -103,6 +104,9 @@ async function runScenario(scenario, page, send) {
   return { timeline: { scenario: scenario.name, source: 'gui', events: await events() }, problem };
 }
 
+const modeIndex = process.argv.indexOf('--mode');
+const mode = modeIndex !== -1 ? process.argv[modeIndex + 1] : 'arcade';
+
 async function main() {
   const cleanup = createCleanup();
   cleanup.installSignalHandlers();
@@ -117,7 +121,7 @@ async function main() {
     const browser = await launchBrowser();
     cleanup.add(() => browser.close());
     const page = await browser.newPage();
-    await page.goto(`http://localhost:${webPort}/?timeline=1&ws=${wsPort}&bot=off`);
+    await page.goto(`http://localhost:${webPort}/?timeline=1&ws=${wsPort}&bot=off&mode=${mode}`);
     await page.getByRole('button', { name: 'Unmute game audio' }).click();
     await sleep(1000);
 
@@ -145,8 +149,6 @@ async function main() {
         }
       }
     }
-    const modeIndex = process.argv.indexOf('--mode');
-    const mode = modeIndex !== -1 ? process.argv[modeIndex + 1] : 'arcade';
     console.log(`\nMode: ${mode}`);
     console.log(formatReport(compareTimelines({ reference, gui: timelines, gameFps: config.GameFPS, mode })));
   } finally {

@@ -1,13 +1,14 @@
 // Scenario scripts that drive our game server while the visualizer records its timeline.
-// ctx: { send(cmd), moveTo(row, col), frame(), waitForEvent(type, timeoutMs), sleep(ms) }
+// ctx: { send(cmd), press(key), moveTo(row, col), frame(), waitForEvent(type, timeoutMs), sleep(ms) }
 
 const POWER_PELLETS = [[23, 1], [23, 26]];
 
 // The ghost house interior, where Pac-Man can't follow
 const inGhostHouse = ({ row, col }) => row >= 12 && row <= 16 && col >= 10 && col <= 17;
 
+// Start through the page, like a person would, so arcade mode can show READY first
 async function startGame(ctx) {
-  ctx.send('P');
+  await ctx.press('Space');
   await ctx.waitForEvent('gameStarted', 15000);
 }
 
@@ -35,7 +36,7 @@ export const SCENARIOS = [
       await startGame(ctx);
       ctx.send('k');
       await ctx.waitForEvent('deathEnded', 10000);
-      await ctx.sleep(2000); // room for a READY after death, if the GUI shows one
+      await ctx.sleep(5000); // room for the READY after the death and the resume
     },
   },
   {
@@ -74,8 +75,13 @@ export const SCENARIOS = [
   {
     name: 'siren',
     async run(ctx) {
-      ctx.send('P');
-      await ctx.sleep(10000); // the GUI has no siren yet; reported as not implemented
+      await startGame(ctx);
+      await ctx.sleep(500);
+      // Debug-clear pellets down to 123, 63, 27 and 15, the arcade's siren steps
+      for (const n of [121, 60, 36, 12]) {
+        ctx.send('e' + String.fromCharCode(n));
+        await ctx.sleep(1000);
+      }
     },
   },
 ];

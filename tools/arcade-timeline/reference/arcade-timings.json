@@ -24,6 +24,11 @@
     "unit": "s",
     "source": "MAME pacman, 2026-11-09"
   },
+  "death.readyToResume": {
+    "value": 1.8975,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-09"
+  },
   "death.frameCount": {
     "value": 12,
     "unit": "count",

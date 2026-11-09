@@ -3,6 +3,9 @@ import { GAPS, COUNTS, SIREN, GUI_NOT_IMPLEMENTED } from './gaps.mjs';
 
 const ARCADE_FPS = 60.606;
 
+// Competition mode shows no READY after a death, so these have nothing to measure.
+const COMPETITION_NOT_APPLICABLE = new Set(['death.endToReady', 'death.readyToResume']);
+
 /** Allowed difference for a measurement kind, in seconds (or events, for counts). */
 export function toleranceFor(kind, gameFps) {
   switch (kind) {
@@ -14,13 +17,18 @@ export function toleranceFor(kind, gameFps) {
   }
 }
 
-const matches = (event, { type, frame, flash }) =>
-  event.type === type && (frame == null || event.frame === frame) && (flash == null || event.flash === flash);
+// `after` limits a match to events at or after the first event of that type.
+function matcher(events, { type, frame, flash, after }) {
+  const since = after == null ? -Infinity : events.find((event) => event.type === after)?.t;
+  return (event) => since !== undefined && event.t >= since && event.type === type &&
+    (frame == null || event.frame === frame) && (flash == null || event.flash === flash);
+}
 
 function measureGap(events, { from, to }) {
-  const start = events.find((event) => matches(event, from));
+  const start = events.find(matcher(events, from));
   if (!start) return undefined;
-  const end = events.find((event) => event.t >= start.t && event !== start && matches(event, to));
+  const isEnd = matcher(events, to);
+  const end = events.find((event) => event.t >= start.t && event !== start && isEnd(event));
   return end ? end.t - start.t : undefined;
 }
 
@@ -83,6 +91,7 @@ export function compareTimelines({ reference, gui, gameFps, mode = 'arcade' }) {
     const target = mode === 'competition' && category === 'pause' ? 0 : arcade;
     let status;
     if (category === 'server') status = 'info';
+    else if (mode === 'competition' && COMPETITION_NOT_APPLICABLE.has(key)) status = 'not applicable';
     else if (target === undefined) status = 'no reference';
     else if (types.some((type) => GUI_NOT_IMPLEMENTED.has(type))) status = 'not implemented';
     else if (measured === undefined) status = 'did not complete';
