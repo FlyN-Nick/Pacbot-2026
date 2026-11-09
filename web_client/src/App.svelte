@@ -51,13 +51,12 @@
   import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
   import ModeToggle from './lib/ModeToggle.svelte';
-  import { visualizerMode, resolveMode, saveMode } from './lib/visualizerMode.js';
+  import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
   import { planSequence, createSequenceRunner } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
 
-  // Arcade (demo) or competition mode: ?mode=, then the saved choice, then competition
-  const browserStorage = () => { try { return window.localStorage; } catch { return undefined; } };
-  visualizerMode.set(resolveMode({ search: window.location.search, storage: browserStorage() }));
+  // Arcade (demo) mode only with ?mode=arcade in the URL; otherwise competition
+  visualizerMode.set(resolveMode(window.location.search));
 
   const eventTracker = createGameEventTracker();
 
@@ -220,7 +219,9 @@
   }
 
   function changeMode(mode) {
-    saveMode(mode, browserStorage());
+    // Show the mode in the address bar without adding a history entry
+    const { pathname, search, hash } = window.location;
+    window.history.replaceState(window.history.state, '', pathname + searchWithMode(search, mode) + hash);
     visualizerMode.set(mode);
     runner.cancel();
     clearSequenceDisplay();

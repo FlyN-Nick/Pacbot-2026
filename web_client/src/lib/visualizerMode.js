@@ -1,28 +1,22 @@
 // Arcade (demo) mode holds the game to match the arcade; competition mode never does.
+// The URL is the only source: ?mode=arcade means arcade mode, anything else is
+// competition, so the address bar always shows which mode is on.
 import { writable } from 'svelte/store';
 
 export const MODES = ['arcade', 'competition'];
-export const STORAGE_KEY = 'pacbot.visualizerMode';
-const DEFAULT_MODE = 'competition';
 
-const valid = (mode) => MODES.includes(mode);
-
-/** The ?mode= URL parameter, then the stored mode, then competition. */
-export function resolveMode({ search, storage }) {
-  const fromUrl = new URLSearchParams(search || '').get('mode');
-  if (valid(fromUrl)) return fromUrl;
-  try {
-    const stored = storage?.getItem(STORAGE_KEY);
-    if (valid(stored)) return stored;
-  } catch { /* Storage can be blocked; fall through to the default. */ }
-  return DEFAULT_MODE;
+export function resolveMode(search) {
+  return new URLSearchParams(search || '').get('mode') === 'arcade' ? 'arcade' : 'competition';
 }
 
-export function saveMode(mode, storage) {
-  try {
-    storage?.setItem(STORAGE_KEY, mode);
-  } catch { /* Storage can be blocked; the mode still applies for this page. */ }
+/** The URL search string for `mode`, keeping every other parameter. */
+export function searchWithMode(search, mode) {
+  const params = new URLSearchParams(search || '');
+  if (mode === 'arcade') params.set('mode', 'arcade');
+  else params.delete('mode');
+  const result = params.toString();
+  return result ? `?${result}` : '';
 }
 
-/** The current mode; App.svelte initialises it with resolveMode(). */
-export const visualizerMode = writable(DEFAULT_MODE);
+/** The current mode; App.svelte initialises it from the URL. */
+export const visualizerMode = writable('competition');

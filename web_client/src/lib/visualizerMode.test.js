@@ -1,42 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveMode, saveMode, STORAGE_KEY, MODES } from './visualizerMode.js';
-
-const storageWith = (value) => ({ getItem: (key) => (key === STORAGE_KEY ? value : null), setItem() {} });
-const throwing = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+import { resolveMode, searchWithMode, MODES } from './visualizerMode.js';
 
 test('the modes are arcade and competition', () => {
   assert.deepEqual(MODES, ['arcade', 'competition']);
 });
 
-test('the URL parameter beats the stored mode', () => {
-  assert.equal(resolveMode({ search: '?mode=arcade', storage: storageWith('competition') }), 'arcade');
+test('?mode=arcade selects arcade mode', () => {
+  assert.equal(resolveMode('?mode=arcade'), 'arcade');
+  assert.equal(resolveMode('?timeline=1&mode=arcade'), 'arcade');
 });
 
-test('the stored mode is used without a URL parameter', () => {
-  assert.equal(resolveMode({ search: '', storage: storageWith('arcade') }), 'arcade');
+test('anything else is competition mode', () => {
+  for (const search of ['', '?mode=competition', '?mode=bogus', '?mode=ARCADE', undefined]) {
+    assert.equal(resolveMode(search), 'competition', String(search));
+  }
 });
 
-test('with neither, the mode is competition', () => {
-  assert.equal(resolveMode({ search: '', storage: storageWith(null) }), 'competition');
+test('enabling arcade mode puts it in the URL', () => {
+  assert.equal(searchWithMode('', 'arcade'), '?mode=arcade');
+  assert.equal(searchWithMode('?timeline=1&ws=3002', 'arcade'), '?timeline=1&ws=3002&mode=arcade');
+  assert.equal(searchWithMode('?mode=arcade', 'arcade'), '?mode=arcade');
 });
 
-test('an unknown URL value is ignored', () => {
-  assert.equal(resolveMode({ search: '?mode=bogus', storage: storageWith('arcade') }), 'arcade');
-});
-
-test('storage that throws falls back to competition', () => {
-  assert.equal(resolveMode({ search: '', storage: throwing }), 'competition');
-  assert.equal(resolveMode({ search: '', storage: undefined }), 'competition');
-});
-
-test('saving survives storage that throws', () => {
-  assert.doesNotThrow(() => saveMode('arcade', throwing));
-  assert.doesNotThrow(() => saveMode('arcade', undefined));
-});
-
-test('saving stores the mode under the storage key', () => {
-  const saved = {};
-  saveMode('arcade', { setItem: (key, value) => { saved[key] = value; } });
-  assert.deepEqual(saved, { [STORAGE_KEY]: 'arcade' });
+test('competition mode removes the mode from the URL', () => {
+  assert.equal(searchWithMode('?mode=arcade', 'competition'), '');
+  assert.equal(searchWithMode('?timeline=1&mode=arcade&ws=3002', 'competition'), '?timeline=1&ws=3002');
+  assert.equal(searchWithMode('?mode=competition', 'competition'), '');
 });
