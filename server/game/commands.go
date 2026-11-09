@@ -65,6 +65,10 @@ func (gs *gameState) interpretCommand(msg []byte) bool {
 	// Kill a pacman life (for debugging)
 	case 'k':
 		gs.decrementLives()
+
+	// Clear all but the nearest pellet (for debugging)
+	case 'c':
+		gs.clearAllButNearestPellet()
 	}
 
 	return false
