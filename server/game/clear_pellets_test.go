@@ -91,3 +91,36 @@ func TestInterpretCommandC(t *testing.T) {
 		t.Fatalf("numPellets = %d, want 1", n)
 	}
 }
+
+func TestClearPelletsRemovesFirstN(t *testing.T) {
+	gs := newGameState()
+	before := setPellets(gs.pellets)
+	gs.clearPellets(121)
+	if got := gs.getNumPellets(); got != 123 {
+		t.Fatalf("numPellets = %d, want 123", got)
+	}
+	after := setPellets(gs.pellets)
+	if len(after) != 123 || after[0] != before[121] {
+		t.Fatalf("remaining pellets start at %v, want %v", after[0], before[121])
+	}
+}
+
+func TestClearPelletsMoreThanRemaining(t *testing.T) {
+	gs := newGameState()
+	gs.clearPellets(250)
+	if got := gs.getNumPellets(); got != 0 {
+		t.Fatalf("numPellets = %d, want 0", got)
+	}
+	if left := setPellets(gs.pellets); len(left) != 0 {
+		t.Fatalf("%d pellets left, want 0", len(left))
+	}
+}
+
+func TestClearPelletsZero(t *testing.T) {
+	gs := newGameState()
+	before := gs.pellets
+	gs.clearPellets(0)
+	if gs.pellets != before || gs.getNumPellets() != 244 {
+		t.Fatalf("pellets changed by clearPellets(0)")
+	}
+}

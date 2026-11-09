@@ -443,6 +443,24 @@ func (gs *gameState) clearAllButNearestPellet() {
 	gs.numPellets = 1
 }
 
+// Clear the first n pellets in row-major order (for debugging)
+func (gs *gameState) clearPellets(n int) {
+
+	// (Write) lock the pellets array and number of pellets
+	gs.muPellets.Lock()
+	defer gs.muPellets.Unlock()
+
+	for row := int8(0); row < mazeRows && n > 0; row++ {
+		for col := int8(0); col < mazeCols && n > 0; col++ {
+			if getBit(gs.pellets[row], col) {
+				modifyBit(&(gs.pellets[row]), col, false)
+				gs.numPellets--
+				n--
+			}
+		}
+	}
+}
+
 // Absolute value of a 16-bit integer
 func abs16(x int16) int16 {
 	if x < 0 {
