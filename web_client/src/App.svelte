@@ -173,7 +173,7 @@
         timeline.anchor('pacmanCaught');
         recordDeathFrames();
         deathShouldResume = Boolean(gameWasRunning);
-        holdGameplayForAnimation(GUI_TIMINGS.deathHoldMs, deathShouldResume);
+        holdGameplayForAnimation(GUI_TIMINGS.deathFreezeMs + GUI_TIMINGS.deathAnimationMs, deathShouldResume);
       }
       if (event.type === 'ghostEaten') {
         timeline.anchor('ghostEaten');
