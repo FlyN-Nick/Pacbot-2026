@@ -38,7 +38,9 @@ export function reduceTimeline({ scenario, events }) {
   if (scenario === SIREN.scenario) {
     events.filter((event) => event.type === SIREN.type).forEach((step, i) => {
       reduced[`siren.step${i + 1}.pelletsRemaining`] = { value: step.pelletsRemaining, unit: 'count' };
-      reduced[`siren.step${i + 1}.loopPeriod`] = { value: step.periodSeconds, unit: 's' };
+      if (typeof step.periodSeconds === 'number') {
+        reduced[`siren.step${i + 1}.loopPeriod`] = { value: step.periodSeconds, unit: 's' };
+      }
     });
   }
   return reduced;

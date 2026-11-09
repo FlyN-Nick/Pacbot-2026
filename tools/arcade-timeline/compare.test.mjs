@@ -125,3 +125,11 @@ test('the report has one line per row with its status', () => {
   assert.match(line, /ours 1\.250s/);
   assert.match(line, /FAIL/);
 });
+
+test('a siren step without a measurable loop period keeps only its pellet count', () => {
+  const siren = reduceTimeline(timeline('siren', [
+    { t: 0, type: 'sirenStep', pelletsRemaining: 27 },
+  ]));
+  assert.deepEqual(siren['siren.step1.pelletsRemaining'], { value: 27, unit: 'count' });
+  assert.equal('siren.step1.loopPeriod' in siren, false);
+});

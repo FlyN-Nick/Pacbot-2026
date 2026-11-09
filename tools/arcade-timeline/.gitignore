@@ -9,3 +9,5 @@ arcade-timeline.json
 *.5e
 *.5f
 82s1*
+# Files MAME writes next to the recorder
+mame/*/
