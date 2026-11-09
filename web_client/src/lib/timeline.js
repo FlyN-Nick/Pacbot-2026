@@ -3,6 +3,8 @@
  * (tools/arcade-timeline). Records logic timestamps, never painted frames.
  */
 
+import { getGhostVisualState } from './characterAnimations.js';
+
 /** Read ?timeline=1, plus the ws=<port> and bot=off overrides it enables. */
 export function parseTimelineParams(search) {
   const params = new URLSearchParams(search);
@@ -49,4 +51,50 @@ export function createTimeline({ enabled, now = () => performance.now() }) {
 /** Offset of each death-animation frame from the animation's start, in milliseconds. */
 export function deathFrameOffsetsMs({ deathAnimationMs, deathFrames }) {
   return Array.from({ length: deathFrames }, (_, k) => k * deathAnimationMs / deathFrames);
+}
+
+const GHOST_NAMES = ['blinky', 'pinky', 'inky', 'clyde'];
+const cell = ({ rowState, colState }) => `${rowState & 0x3f},${colState & 0x3f}`;
+
+/** Turn successive game frames into actorMoved and fright timeline events. */
+export function createFrameTimelineTracker() {
+  let previous = null;
+  let frightened = false;
+  let flashing = false;
+  let flashCount = 0;
+
+  return {
+    update(frame, updatePeriod) {
+      const events = [];
+      const modTicks = frame.tick % updatePeriod;
+      const states = frame.ghosts.map(({ trappedState, frightState }) =>
+        getGhostVisualState(trappedState, frightState, modTicks, updatePeriod));
+      const nowFrightened = states.some((state) => state.frightened);
+      const nowFlashing = states.some((state) => state.flashing);
+
+      if (previous) {
+        if (cell(frame.pacman) !== cell(previous.pacman)) {
+          events.push({ type: 'actorMoved', data: { actor: 'pacman' } });
+        }
+        frame.ghosts.forEach((ghost, i) => {
+          if (previous.ghosts[i] && cell(ghost) !== cell(previous.ghosts[i])) {
+            events.push({ type: 'actorMoved', data: { actor: GHOST_NAMES[i] } });
+          }
+        });
+        if (nowFrightened && !frightened) {
+          flashCount = 0;
+          events.push({ type: 'frightStarted', data: {} });
+        }
+        if (nowFlashing && !flashing) {
+          events.push({ type: 'frightFlashStart', data: { flash: ++flashCount } });
+        }
+        if (!nowFrightened && frightened) events.push({ type: 'frightEnded', data: {} });
+      }
+
+      previous = frame;
+      frightened = nowFrightened;
+      flashing = nowFlashing;
+      return events;
+    },
+  };
 }

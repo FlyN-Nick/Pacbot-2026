@@ -15,7 +15,8 @@ const PRIORITY = { intro: 1, intermission: 2, death: 3 };
 export function createAudioController({
   contextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(),
   assetBase = '/audio',
-  fetcher = (...args) => globalThis.fetch(...args)
+  fetcher = (...args) => globalThis.fetch(...args),
+  onCueStarted = () => {}
 } = {}) {
   let context;
   let master;
@@ -180,6 +181,7 @@ export function createAudioController({
         if (active.get(name) === entry) active.delete(name);
       };
       source.start();
+      onCueStarted({ name, duration: buffer.duration });
       if (name === 'chomp' && !loop) lastChompTime = context.currentTime;
     } catch {
       active.delete(name);

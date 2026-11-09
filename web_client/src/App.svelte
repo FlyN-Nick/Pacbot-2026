@@ -48,10 +48,26 @@
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
   import { GUI_TIMINGS } from './lib/guiTimings.js';
+  import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
 
   const eventTracker = createGameEventTracker();
-  const audioController = createAudioController({ assetBase: `${import.meta.env.BASE_URL}audio` });
+
+  // Timeline mode (?timeline=1) records event timings for tools/arcade-timeline
+  const timelineParams = parseTimelineParams(window.location.search);
+  const timeline = createTimeline({ enabled: timelineParams.enabled });
+  const frameTimelineTracker = createFrameTimelineTracker();
+  const recordMusic = ({ name, duration }) => {
+    if (name !== 'intro') return;
+    const startMs = performance.now();
+    timeline.record('musicStarted', {}, { atMs: startMs });
+    timeline.record('musicEnded', {}, { atMs: startMs + duration * 1000 });
+  };
+
+  const audioController = createAudioController({
+    assetBase: `${import.meta.env.BASE_URL}audio`,
+    onCueStarted: recordMusic,
+  });
   const fruitTypeForLevel = (level) => ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(level, 1) - 1, 12)];
   let audioEnabled = false;
   let latestFrame = null;
@@ -108,13 +124,16 @@
     }
   }
 
-  function holdGameplayForAnimation(duration, resumeAfter = true) {
+  function holdGameplayForAnimation(duration, resumeAfter = true, onResume = () => {}) {
     clearTimeout(animationPauseTimer);
     animationPauseLock = true;
     sendToSocket('p');
     animationPauseTimer = setTimeout(() => {
       animationPauseLock = false;
-      if (resumeAfter && socketOpen) sendToSocket('P');
+      if (resumeAfter && socketOpen) {
+        sendToSocket('P');
+        onResume();
+      }
     }, duration);
   }
 
@@ -148,11 +167,24 @@
         pickedFruits[type] = (pickedFruits[type] || 0) + 1;
         pickedFruits = { ...pickedFruits };
       }
-      if (event.type === 'gameStarted') holdGameplayForAnimation(GUI_TIMINGS.readyHoldMs);
+      if (event.type === 'gameStarted') {
+        timeline.anchor('readyShown');
+        holdGameplayForAnimation(GUI_TIMINGS.readyHoldMs, true, () => timeline.record('gameStarted'));
+      }
       if (event.type === 'lifeLost') {
+        timeline.anchor('pacmanCaught');
+        recordDeathFrames();
         deathShouldResume = Boolean(gameWasRunning);
         holdGameplayForAnimation(GUI_TIMINGS.deathHoldMs, deathShouldResume);
       }
+      if (event.type === 'ghostEaten') {
+        timeline.anchor('ghostEaten');
+        timeline.record('scorePopupShown');
+      }
+      if (event.type === 'levelChanged') timeline.anchor('levelCleared');
+    }
+    for (const { type, data } of frameTimelineTracker.update(frame, updatePeriod)) {
+      timeline.record(type, data);
     }
     ghostReturnEvents = ghostReturnEvents;
     latestFrame = frame;
@@ -164,6 +196,28 @@
       if (name !== 'frightened') audioController.play(name);
     }
     syncFrightenedAudio();
+  }
+
+  // The death animation starts as the lifeLost event is routed
+  function recordDeathFrames() {
+    const startMs = performance.now();
+    deathFrameOffsetsMs(GUI_TIMINGS).forEach((offsetMs, i) => {
+      timeline.record('deathFrame', { frame: i + 1 }, { atMs: startMs + offsetMs });
+    });
+    timeline.record('deathEnded', {}, { atMs: startMs + GUI_TIMINGS.deathAnimationMs });
+  }
+
+  // Test-only access for tools/arcade-timeline
+  if (timelineParams.enabled) {
+    window.__arcadeTimeline = {
+      events: () => timeline.events(),
+      reset: () => timeline.reset(),
+      frame: () => latestFrame && {
+        pacman: { row: latestFrame.pacman.rowState & 0x1f, col: latestFrame.pacman.colState & 0x1f },
+        ghosts: latestFrame.ghosts.map(({ rowState, colState }) => ({ row: rowState & 0x1f, col: colState & 0x1f })),
+        pellets: [...latestFrame.pelletRows],
+      },
+    };
   }
 
   /* Config */
@@ -187,8 +241,10 @@
   import Reset from './lib/info_boxes/reset.svelte';
 
   // Creating a websocket client
-  var socket = new WebSocket(`ws://${config.ServerIP}:${config.WebSocketPort}`);
-  var botSocket = new WebSocket(`ws://${config.BotIP}:${config.BotSocketPort}`);
+  var socket = new WebSocket(`ws://${config.ServerIP}:${timelineParams.wsPort ?? config.WebSocketPort}`);
+  var botSocket = timelineParams.botEnabled
+    ? new WebSocket(`ws://${config.BotIP}:${config.BotSocketPort}`)
+    : null;
 
   socket.binaryType = 'arraybuffer';
   let socketOpen = false;
@@ -398,7 +454,7 @@
   });
 
   // Handling a new connection between webClient and bot 
-  botSocket.addEventListener('open', (_) => {
+  botSocket?.addEventListener('open', (_) => {
     console.log('WebSocket connection established with Bot');
     botSocketOpen = true;
   });
@@ -536,7 +592,7 @@
   });
 
   // Message events for bot-web client connection
-  botSocket.addEventListener('message', (event) => {
+  botSocket?.addEventListener('message', (event) => {
     if (typeof event.data == 'string') {
       let content = event.data.split(" "); 
 
@@ -625,7 +681,7 @@
   });
 
   // Event on close for bot-web client connection
-  botSocket.addEventListener('close', (_) => {
+  botSocket?.addEventListener('close', (_) => {
     botSocketOpen = false;
     console.log('WebSocket connection with robot closed');
   });
@@ -861,7 +917,7 @@
     clearTimeout(animationPauseTimer);
     audioController.destroy();
     socket.close();
-    botSocket.close();
+    botSocket?.close();
   });
 
 </script>

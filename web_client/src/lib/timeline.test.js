@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTimelineParams, createTimeline, deathFrameOffsetsMs } from './timeline.js';
+import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './timeline.js';
 
 const clock = (...times) => {
   let i = 0;
@@ -79,4 +79,58 @@ test('death frames are spread evenly over the animation', () => {
   assert.equal(offsets[0], 0);
   assert.equal(offsets[1], 180);
   assert.equal(offsets[9], 1620);
+});
+
+const ghost = (row, col, frightSteps = 0) =>
+  ({ rowState: row, colState: col, frightState: frightSteps, trappedState: 0 });
+const frame = ({ tick = 0, pacman = [23, 13], ghosts = [[11, 13], [13, 13], [14, 11], [14, 15]], fright = 0 } = {}) => ({
+  tick,
+  pacman: { rowState: pacman[0], colState: pacman[1] },
+  ghosts: ghosts.map(([row, col]) => ghost(row, col, fright)),
+});
+
+test('the first frame produces no events', () => {
+  const tracker = createFrameTimelineTracker();
+  assert.deepEqual(tracker.update(frame(), 12), []);
+});
+
+test('moving actors are reported by name', () => {
+  const tracker = createFrameTimelineTracker();
+  tracker.update(frame(), 12);
+  const events = tracker.update(frame({ pacman: [23, 12], ghosts: [[11, 12], [13, 13], [14, 11], [14, 15]] }), 12);
+  assert.deepEqual(events, [
+    { type: 'actorMoved', data: { actor: 'pacman' } },
+    { type: 'actorMoved', data: { actor: 'blinky' } },
+  ]);
+});
+
+test('a direction change without a cell change is not a move', () => {
+  const tracker = createFrameTimelineTracker();
+  tracker.update(frame(), 12);
+  assert.deepEqual(tracker.update(frame({ pacman: [23 | 0x40, 13] }), 12), []);
+});
+
+test('fright start, each flash, and fright end are reported', () => {
+  const tracker = createFrameTimelineTracker();
+  tracker.update(frame(), 12);
+  assert.deepEqual(tracker.update(frame({ fright: 40 }), 12),
+    [{ type: 'frightStarted', data: {} }]);
+  // Within the last 10 steps, the second half of each update period flashes
+  assert.deepEqual(tracker.update(frame({ fright: 10, tick: 6 }), 12),
+    [{ type: 'frightFlashStart', data: { flash: 1 } }]);
+  assert.deepEqual(tracker.update(frame({ fright: 9, tick: 12 }), 12), []);
+  assert.deepEqual(tracker.update(frame({ fright: 9, tick: 18 }), 12),
+    [{ type: 'frightFlashStart', data: { flash: 2 } }]);
+  assert.deepEqual(tracker.update(frame({ fright: 0, tick: 24 }), 12),
+    [{ type: 'frightEnded', data: {} }]);
+});
+
+test('flash numbering restarts with each fright', () => {
+  const tracker = createFrameTimelineTracker();
+  tracker.update(frame(), 12);
+  tracker.update(frame({ fright: 10, tick: 6 }), 12);
+  tracker.update(frame({ fright: 0, tick: 12 }), 12);
+  tracker.update(frame({ fright: 40, tick: 13 }), 12);
+  assert.deepEqual(tracker.update(frame({ fright: 10, tick: 18 }), 12),
+    [{ type: 'frightFlashStart', data: { flash: 1 } }]);
 });

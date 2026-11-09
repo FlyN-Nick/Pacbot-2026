@@ -200,3 +200,23 @@ test('rapid pellet events are rate limited while later chomps play', async () =>
   await controller.play('chomp');
   assert.equal(f.sources.length, 2);
 });
+
+test('onCueStarted reports each cue as its sound starts', async () => {
+  const f = fixture();
+  const started = [];
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher,
+    onCueStarted: (cue) => started.push(cue) });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('intro');
+  assert.deepEqual(started, [{ name: 'intro', duration: 1 }]);
+});
+
+test('onCueStarted is not called while audio is disabled', async () => {
+  const f = fixture();
+  const started = [];
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher,
+    onCueStarted: (cue) => started.push(cue) });
+  await controller.play('intro');
+  assert.deepEqual(started, []);
+});

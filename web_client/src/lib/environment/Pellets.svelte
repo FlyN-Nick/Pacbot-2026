@@ -102,7 +102,7 @@
 
   const hello = (i, j) => {
     console.log("hello from " + i + " , " + j)
-    botSocket.send(`clicked ${i} ${j}`)
+    if (botSocket?.readyState === WebSocket.OPEN) botSocket.send(`clicked ${i} ${j}`)
   }
 
   const pelletMods = [' hidden', '', ' super']
