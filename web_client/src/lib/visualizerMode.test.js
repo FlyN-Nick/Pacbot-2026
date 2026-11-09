@@ -23,8 +23,8 @@ test('enabling arcade mode puts it in the URL', () => {
   assert.equal(searchWithMode('?mode=arcade', 'arcade'), '?mode=arcade');
 });
 
-test('competition mode removes the mode from the URL', () => {
-  assert.equal(searchWithMode('?mode=arcade', 'competition'), '');
-  assert.equal(searchWithMode('?timeline=1&mode=arcade&ws=3002', 'competition'), '?timeline=1&ws=3002');
-  assert.equal(searchWithMode('?mode=competition', 'competition'), '');
+test('switching to competition mode shows it in the URL', () => {
+  assert.equal(searchWithMode('?mode=arcade', 'competition'), '?mode=competition');
+  assert.equal(searchWithMode('?timeline=1&mode=arcade&ws=3002', 'competition'), '?timeline=1&mode=competition&ws=3002');
+  assert.equal(searchWithMode('', 'competition'), '?mode=competition');
 });
