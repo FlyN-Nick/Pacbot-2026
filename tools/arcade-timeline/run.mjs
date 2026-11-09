@@ -123,6 +123,8 @@ async function main() {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${webPort}/?timeline=1&ws=${wsPort}&bot=off&mode=${mode}`);
     await page.getByRole('button', { name: 'Unmute game audio' }).click();
+    // Game keys are ignored while a button has focus
+    await page.evaluate(() => document.activeElement?.blur());
     await sleep(1000);
 
     const timelines = [];
