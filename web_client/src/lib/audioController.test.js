@@ -233,3 +233,25 @@ test('onCueEnded reports when a cue really ends, including when stopped early', 
   controller.stopAll();
   assert.deepEqual(ended, [{ name: 'intro' }]);
 });
+
+test('stopAll runs the registered stop callbacks', () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  let calls = 0;
+  controller.onStopAll(() => { calls++; });
+  controller.stopAll();
+  assert.equal(calls, 1);
+});
+
+test('the audio graph is only available once unlocked and enabled', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  assert.equal(controller.getAudioGraph(), null);
+  controller.setEnabled(true);
+  await controller.unlock();
+  const graph = controller.getAudioGraph();
+  assert.equal(graph.context, f.context);
+  assert.ok(graph.destination);
+  controller.setEnabled(false);
+  assert.equal(controller.getAudioGraph(), null);
+});

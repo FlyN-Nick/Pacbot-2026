@@ -32,6 +32,7 @@ export function createAudioController({
   const pendingLoops = new Map();
   const pendingPriority = new Map();
   const stopVersions = new Map();
+  const stopAllCallbacks = [];
 
   function ensureContext() {
     if (context || destroyed) return context;
@@ -72,6 +73,7 @@ export function createAudioController({
 
   function stopAll() {
     generation++;
+    for (const callback of stopAllCallbacks) callback();
     pendingLoops.clear();
     pendingPriority.clear();
     for (const name of active.keys()) stop(name);
@@ -199,5 +201,15 @@ export function createAudioController({
     try { await context?.close(); } catch { /* Audio teardown must be safe. */ }
   }
 
-  return { unlock, setEnabled, setVolume, play, stop, stopAll, destroy };
+  /** The context and output for sounds made outside the controller (the siren); null while silent. */
+  function getAudioGraph() {
+    if (!enabled || !unlocked || destroyed || context?.state !== 'running') return null;
+    return { context, destination: master };
+  }
+
+  function onStopAll(callback) {
+    stopAllCallbacks.push(callback);
+  }
+
+  return { unlock, setEnabled, setVolume, play, stop, stopAll, destroy, getAudioGraph, onStopAll };
 }
