@@ -1,0 +1,36 @@
+name: Observation parity
+
+# Checks that the bot's DQN observations, action masks, and model choice match
+# the RL training environment (bot_client/tests/test_obs_parity.py). It builds
+# curc-pacbot-rl's Rust environment from source, so it only runs on demand:
+# use "Run workflow" on the Actions tab, or
+#   gh workflow run parity.yml --ref <branch>
+on:
+  workflow_dispatch:
+
+jobs:
+  parity:
+    name: Bot observation parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.11"
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - name: Install dependencies and build the training environment
+        working-directory: bot_client
+        run: uv sync --locked --extra dqn --group parity --python 3.11
+      - name: Check the parity test can run
+        # The test skips itself when these are missing, which would pass silently
+        working-directory: bot_client
+        run: >
+          uv run --locked --extra dqn --group parity --python 3.11 python -c
+          "import pacbot_rs, torch, safetensors, pacbot_rl_models;
+          assert hasattr(pacbot_rs.PacmanGym, 'game_state_bytes'), 'pacbot_rs is too old'"
+      - name: Test observation parity
+        working-directory: bot_client
+        run: uv run --locked --extra dqn --group parity --python 3.11 python -m unittest tests.test_obs_parity -v
