@@ -30,13 +30,18 @@ assert low_level.s is None
 
         fake_decision = object()
         args = SimpleNamespace(strategy="astar", debug=True, force_no_bot=False)
-        with patch.object(pacbotClient, "DecisionModule", return_value=fake_decision) as ctor:
-            result = pacbotClient.make_decision_module(args, object())
+        dqn_modules = ("dqn_module", "torch", "pacbot_rl_models")
+        # Other tests in this process may have loaded the DQN code already;
+        # hide it so this checks only what the A* path imports.
+        with patch.dict(sys.modules):
+            for name in [m for m in sys.modules if m.split(".")[0] in dqn_modules]:
+                del sys.modules[name]
+            with patch.object(pacbotClient, "DecisionModule", return_value=fake_decision) as ctor:
+                result = pacbotClient.make_decision_module(args, object())
+            for name in dqn_modules:
+                self.assertNotIn(name, sys.modules)
         self.assertIs(result, fake_decision)
         ctor.assert_called_once()
-        self.assertNotIn("dqn_module", sys.modules)
-        self.assertNotIn("torch", sys.modules)
-        self.assertNotIn("pacbot_rl_models", sys.modules)
 
     def test_dqn_uses_installed_model_package(self):
         import pacbotClient

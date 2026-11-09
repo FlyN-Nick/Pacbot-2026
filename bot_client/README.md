@@ -28,7 +28,7 @@ The bot supports Python 3.11 and newer. The current compatibility checks cover P
 Other useful files:
 
 - `decisionModule.py`: A* decision module with an asynchronous loop and game state locking
-- `dqn_module.py`: DQN decision module
+- `dqn_module.py`: DQN decision module. It builds the same observations and action masks as the RL training environment, and, like training, uses the checkpoint only in "purgatory" (no frightened ghosts, ghosts not close) under the environment version the checkpoint records and `curc-pacbot-rl/src/checkpoints_known/superpelletmode.safetensors` otherwise. `tests/test_obs_parity.py` checks this against the training environment, which it builds from Rust source (needs [Rust](https://www.rust-lang.org/tools/install)): `uv run --extra dqn --group parity python -m unittest tests.test_obs_parity`
 - `pacbotAgent.py`: upstream's minimal agent template (not used by this client)
 - `gameState.py`: parsed game state and prediction helpers
 - `walls.py`: binary maze walls, matching `initWalls` in the server
