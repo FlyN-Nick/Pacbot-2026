@@ -1,0 +1,11 @@
+node_modules/
+arcade-timeline.json
+# Never commit arcade ROMs
+*.zip
+*.6e
+*.6f
+*.6h
+*.6j
+*.5e
+*.5f
+82s1*

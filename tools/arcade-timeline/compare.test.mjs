@@ -1,0 +1,117 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { toleranceFor, reduceTimeline, compareTimelines, movementDuringReady, formatReport } from './compare.mjs';
+
+const timeline = (scenario, events) => ({ scenario, events });
+const row = (rows, key) => rows.find((r) => r.key === key);
+const ref = (value, unit = 's') => ({ value, unit, source: 'test' });
+
+test('tolerances follow the spec', () => {
+  assert.ok(Math.abs(toleranceFor('animation', 24) - 1 / 60.606) < 1e-12);
+  assert.equal(toleranceFor('audio', 24), 0.05);
+  assert.ok(Math.abs(toleranceFor('tick', 24) - 0.0417) < 1e-4);
+  assert.equal(toleranceFor('count', 24), 0);
+});
+
+test('a gap within tolerance passes and one outside fails', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 4.25, type: 'gameStarted' }])];
+  const pass = compareTimelines({ reference: { 'start.readyToGameStarted': ref(4.27) }, gui, gameFps: 24 });
+  assert.equal(row(pass, 'start.readyToGameStarted').status, 'pass');
+  const fail = compareTimelines({ reference: { 'start.readyToGameStarted': ref(4.5) }, gui, gameFps: 24 });
+  assert.equal(row(fail, 'start.readyToGameStarted').status, 'fail');
+  assert.equal(row(fail, 'start.readyToGameStarted').ours, 4.25);
+});
+
+test('a gap whose end never comes did not complete', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 0.1, type: 'musicStarted' }])];
+  const rows = compareTimelines({ reference: { 'start.musicLength': ref(4.22) }, gui, gameFps: 24 });
+  assert.equal(row(rows, 'start.musicLength').status, 'did not complete');
+});
+
+test('a gap whose events never appear is not implemented', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }])];
+  const rows = compareTimelines({ reference: { 'start.musicLength': ref(4.22) }, gui, gameFps: 24 });
+  assert.equal(row(rows, 'start.musicLength').status, 'not implemented');
+});
+
+test('reference keys the GUI cannot produce yet do not stop the report', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
+  const rows = compareTimelines({
+    reference: { 'siren.step1.pelletsRemaining': ref(64, 'count'), 'start.readyToGameStarted': ref(4.27) },
+    gui, gameFps: 24,
+  });
+  assert.equal(row(rows, 'siren.step1.pelletsRemaining').status, 'not implemented');
+  assert.equal(row(rows, 'start.readyToGameStarted').status, 'fail');
+});
+
+test('a measurement without a reference entry is reported as such', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
+  const rows = compareTimelines({ reference: {}, gui, gameFps: 24 });
+  assert.equal(row(rows, 'start.readyToGameStarted').status, 'no reference');
+  assert.equal(row(rows, 'start.readyToGameStarted').ours, 1.25);
+});
+
+test('actors moving during READY are listed', () => {
+  const moved = timeline('start', [
+    { t: 0, type: 'readyShown' },
+    { t: 0.2, type: 'actorMoved', actor: 'blinky' },
+    { t: 1.25, type: 'gameStarted' },
+    { t: 1.5, type: 'actorMoved', actor: 'pinky' },
+  ]);
+  assert.deepEqual(movementDuringReady(moved), ['blinky']);
+  const still = timeline('start', [
+    { t: 0, type: 'readyShown' },
+    { t: 1.25, type: 'gameStarted' },
+    { t: 1.5, type: 'actorMoved', actor: 'blinky' },
+  ]);
+  assert.deepEqual(movementDuringReady(still), []);
+});
+
+test('movement during READY fails the start check', () => {
+  const gui = [timeline('start', [
+    { t: 0, type: 'readyShown' },
+    { t: 0.2, type: 'actorMoved', actor: 'blinky' },
+    { t: 1.25, type: 'gameStarted' },
+  ])];
+  const check = row(compareTimelines({ reference: {}, gui, gameFps: 24 }), 'start.noMovementDuringReady');
+  assert.equal(check.status, 'fail');
+  assert.deepEqual(check.moved, ['blinky']);
+});
+
+test('a gap ends at the first matching event after its start', () => {
+  const reduced = reduceTimeline(timeline('death', [
+    { t: -0.5, type: 'deathEnded' },
+    { t: 0, type: 'deathFrame', frame: 1 },
+    { t: 1.8, type: 'deathEnded' },
+  ]));
+  assert.deepEqual(reduced['death.animationLength'], { value: 1.8, unit: 's' });
+});
+
+test('counts and siren steps are reduced', () => {
+  const level = reduceTimeline(timeline('levelComplete', [
+    { t: 0, type: 'levelCleared' },
+    { t: 1, type: 'mazeFlash', flash: 1 },
+    { t: 1.2, type: 'mazeFlash', flash: 2 },
+    { t: 1.4, type: 'mazeFlash', flash: 3 },
+  ]));
+  assert.deepEqual(level['levelComplete.flashCount'], { value: 3, unit: 'count' });
+  assert.ok(Math.abs(level['levelComplete.toFirstFlash'].value - 1) < 1e-9);
+
+  const siren = reduceTimeline(timeline('siren', [
+    { t: 0, type: 'sirenStep', pelletsRemaining: 128, periodSeconds: 0.6 },
+    { t: 30, type: 'sirenStep', pelletsRemaining: 64, periodSeconds: 0.5 },
+  ]));
+  assert.deepEqual(siren['siren.step2.pelletsRemaining'], { value: 64, unit: 'count' });
+  assert.deepEqual(siren['siren.step2.loopPeriod'], { value: 0.5, unit: 's' });
+});
+
+test('the report has one line per row with its status', () => {
+  const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
+  const report = formatReport(compareTimelines({
+    reference: { 'start.readyToGameStarted': ref(4.27) }, gui, gameFps: 24,
+  }));
+  const line = report.split('\n').find((l) => l.startsWith('start.readyToGameStarted'));
+  assert.match(line, /arcade 4\.270s/);
+  assert.match(line, /ours 1\.250s/);
+  assert.match(line, /FAIL/);
+});
