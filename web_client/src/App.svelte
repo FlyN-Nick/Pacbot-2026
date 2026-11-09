@@ -50,6 +50,14 @@
   import { GUI_TIMINGS } from './lib/guiTimings.js';
   import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
+  import ModeToggle from './lib/ModeToggle.svelte';
+  import { visualizerMode, resolveMode, saveMode } from './lib/visualizerMode.js';
+  import { planSequence, createSequenceRunner } from './lib/arcadeSequencer.js';
+  import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
+
+  // Arcade (demo) or competition mode: ?mode=, then the saved choice, then competition
+  const browserStorage = () => { try { return window.localStorage; } catch { return undefined; } };
+  visualizerMode.set(resolveMode({ search: window.location.search, storage: browserStorage() }));
 
   const eventTracker = createGameEventTracker();
 
@@ -76,9 +84,21 @@
   let pacmanActive = false;
   let pacmanMoving = false;
   let lastPacmanMovementTick = -Infinity;
-  let animationPauseLock = false;
-  let animationPauseTimer;
-  let deathShouldResume = false;
+  // Arcade sequence state (see executeStep)
+  let readyVisible = false;
+  let displayFrozen = false;
+  let frozenFrame = null;
+  let catchFrame = null;
+  let ghostsHidden = false;
+  let startRequested = false;
+  let sessionStarted = false;
+  let dying = false;
+  let dyingTimer;
+  let deathCount = 0;
+  let lastSirenStep = null;
+  const siren = createSiren({ getAudio: () => audioController.getAudioGraph() });
+  audioController.onStopAll(() => siren.stop());
+  const runner = createSequenceRunner({ execute: executeStep, getMode: () => $visualizerMode });
   let pickedFruits = {};
 
   function clearGameEffects() {
@@ -86,9 +106,14 @@
     latestFrame = null;
     visualEvents = [];
     deathEventId = null;
+    runner.cancel();
+    clearSequenceDisplay();
+    startRequested = false;
+    sessionStarted = false;
+    dying = false;
+    clearTimeout(dyingTimer);
+    lastSirenStep = null;
     pickedFruits = {};
-    animationPauseLock = false;
-    clearTimeout(animationPauseTimer);
     ghostReturnEvents = [];
     effectsRevision++;
     pacmanActive = false;
@@ -122,17 +147,108 @@
     }
   }
 
-  function holdGameplayForAnimation(duration, resumeAfter = true, onResume = () => {}) {
-    clearTimeout(animationPauseTimer);
-    animationPauseLock = true;
-    sendToSocket('p');
-    animationPauseTimer = setTimeout(() => {
-      animationPauseLock = false;
-      if (resumeAfter && socketOpen) {
+  function clearSequenceDisplay() {
+    readyVisible = false;
+    displayFrozen = false;
+    frozenFrame = null;
+    ghostsHidden = false;
+  }
+
+  function runSequence(kind, lastLife = false) {
+    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife }));
+  }
+
+  // Carry out one step of an arcade sequence (lib/arcadeSequencer.js)
+  function executeStep(step) {
+    switch (step.action) {
+      case 'hold':
+        sendToSocket('p');
+        break;
+      case 'resume':
         sendToSocket('P');
-        onResume();
-      }
-    }, duration);
+        timeline.record('gameStarted');
+        break;
+      case 'showReady':
+        readyVisible = true;
+        ghostsHidden = false;
+        timeline.anchor('readyShown');
+        // In competition mode play is already live while READY shows
+        if ($visualizerMode === 'competition') timeline.record('gameStarted');
+        break;
+      case 'hideReady':
+        readyVisible = false;
+        break;
+      case 'freezeDisplay':
+        frozenFrame = catchFrame;
+        displayFrozen = Boolean(frozenFrame);
+        break;
+      case 'releaseDisplay':
+        displayFrozen = false;
+        frozenFrame = null;
+        break;
+      case 'deathStart':
+        deathEventId = ++deathCount;
+        dying = true;
+        clearTimeout(dyingTimer);
+        dyingTimer = setTimeout(() => { dying = false; }, GUI_TIMINGS.deathAnimationMs);
+        if ($visualizerMode === 'arcade') ghostsHidden = true;
+        audioController.play('death');
+        recordDeathFrames();
+        break;
+      case 'cue':
+        audioController.play(step.name);
+        break;
+    }
+  }
+
+  // Arcade mode starts a fresh game with READY! first, then resumes the server
+  function canRequestStart() {
+    return $visualizerMode === 'arcade' && socketOpen && gameMode === Modes.Paused &&
+      !sessionStarted && !runner.running;
+  }
+
+  // A pause or resume from a person or the bot client; it always wins over a sequence
+  function sendControl(control) {
+    if (control === 'P' && canRequestStart()) {
+      startRequested = true;
+      runSequence('start');
+      return;
+    }
+    runner.cancel();
+    clearSequenceDisplay();
+    sendToSocket(control);
+  }
+
+  function changeMode(mode) {
+    saveMode(mode, browserStorage());
+    visualizerMode.set(mode);
+    runner.cancel();
+    clearSequenceDisplay();
+  }
+
+  const popcount = (n) => { let count = 0; for (let v = n >>> 0; v; v &= v - 1) count++; return count; };
+
+  function updateSiren(frame, activity) {
+    const pelletsRemaining = frame.pelletRows.reduce((sum, row) => sum + popcount(row ?? 0), 0);
+    const step = sirenStepFor(pelletsRemaining);
+    if (activity.active && step !== lastSirenStep) {
+      lastSirenStep = step;
+      timeline.record('sirenStep', { pelletsRemaining, periodSeconds: SIREN_STEPS[step - 1].periodSeconds });
+    }
+    const play = sirenShouldPlay({
+      active: activity.active,
+      paused: frame.mode === Modes.Paused,
+      frightened: activity.frightened,
+      eyes: false, // no returning-eyes state until the ghost-eaten work
+      dying,
+      ready: readyVisible,
+    });
+    if (play) {
+      siren.setStep(step);
+      siren.start();
+    } else {
+      siren.stop();
+    }
   }
 
   function routeFrame(frame) {
@@ -141,7 +257,6 @@
     if (!currentActive) lastPacmanMovementTick = -Infinity;
     else if (pacmanActive && hasPacmanMoved(latestFrame, frame)) lastPacmanMovementTick = frame.tick;
     const activity = getFrameActivity(frame, socketOpen, lastPacmanMovementTick, updatePeriod);
-    if (pacmanActive && !activity.active) audioController.stopAll();
     pacmanActive = activity.active;
     pacmanMoving = activity.moving;
 
@@ -157,7 +272,6 @@
       ghosts: frame.ghosts.map(position),
       fruit: position(frame.fruit),
     }), frame, latestFrame);
-    const gameWasRunning = latestFrame && (latestFrame.mode === Modes.Scatter || latestFrame.mode === Modes.Chase);
     for (const event of events) {
       if (event.type === 'ghostEaten') ghostReturnEvents[event.ghostIndex] = event;
       if (event.type === 'fruitEaten') {
@@ -166,15 +280,16 @@
         pickedFruits = { ...pickedFruits };
       }
       if (event.type === 'gameStarted') {
-        timeline.anchor('readyShown');
-        holdGameplayForAnimation(GUI_TIMINGS.readyHoldMs, true, () => timeline.record('gameStarted'));
+        sessionStarted = true;
+        // Started from elsewhere (another client); arcade mode holds it for READY
+        if (!startRequested) runSequence($visualizerMode === 'arcade' ? 'startDetected' : 'start');
       }
       if (event.type === 'lifeLost') {
         timeline.anchor('pacmanCaught');
-        recordDeathFrames();
-        deathShouldResume = Boolean(gameWasRunning);
-        holdGameplayForAnimation(GUI_TIMINGS.deathFreezeMs + GUI_TIMINGS.deathAnimationMs, deathShouldResume);
+        catchFrame = latestFrame;
+        runSequence('death', frame.lives === 0);
       }
+      if (event.type === 'gameOver') audioController.stopAll();
       if (event.type === 'ghostEaten') {
         timeline.anchor('ghostEaten');
         timeline.record('scorePopupShown');
@@ -189,11 +304,11 @@
     const actions = getEventActions(events);
     visualEvents = actions.visualEvents;
     for (const { name, event } of actions.audioCues) {
-      if (event.type === 'lifeLost') deathEventId = event.id;
       // Frightened mode is driven by state, including pause and respawn.
       if (name !== 'frightened') audioController.play(name);
     }
     syncFrightenedAudio();
+    updateSiren(frame, activity);
   }
 
   // The death animation starts as the lifeLost event is routed
@@ -653,12 +768,12 @@
           break;
         }
         case 'pause_game': {
-          sendToSocket('p');
+          sendControl('p');
           console.log('Bot client requested game pause');
           break;
         }
         case 'resume_game': {
-          sendToSocket('P');
+          sendControl('P');
           console.log('Bot client requested game resume');
           break;
         }
@@ -692,6 +807,10 @@
     (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / MAZE_ROWS,
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
+
+  // While a death is frozen, show everyone where Pac-Man was caught
+  $: frozenPacman = displayFrozen ? frozenFrame?.pacman : null;
+  $: frozenGhosts = displayFrozen ? frozenFrame?.ghosts : null;
 
   // Calculate the remainder when currTicks is divided by updatePeriod
   $: modTicks = currTicks % updatePeriod
@@ -842,10 +961,7 @@
   // Const toggle pause
   const togglePause = () => {
 
-    if (animationPauseLock) return;
-
-    // Send the command directly to the socket
-    sendToSocket(gameMode === Modes.Paused ? 'P' : 'p');
+    sendControl(gameMode === Modes.Paused ? 'P' : 'p');
   }
 
   const toggleReset = () => {
@@ -878,13 +994,13 @@
 
     // Check if it is a pause/play command
     const control = mediaControlCommand(key);
-    if (control && !animationPauseLock) {
-      sendToSocket(control);
+    if (control) {
+      sendControl(control);
     }
 
     // Check if it is a motion command
     const motion = motionCommand(key);
-    if (motion && !animationPauseLock) {
+    if (motion) {
       sendToSocket(motion);
     }
 
@@ -912,7 +1028,9 @@
   }
 
   onDestroy(() => {
-    clearTimeout(animationPauseTimer);
+    runner.cancel();
+    clearTimeout(dyingTimer);
+    siren.stop();
     audioController.destroy();
     socket.close();
     botSocket?.close();
@@ -953,21 +1071,22 @@
   {#key effectsRevision}
   <Pacman
     {gridSize}
-    {pacmanRowState}
-    {pacmanColState}
+    pacmanRowState={frozenPacman?.rowState ?? pacmanRowState}
+    pacmanColState={frozenPacman?.colState ?? pacmanColState}
     active={pacmanActive}
     moving={pacmanMoving}
     {deathEventId}
-    startupEventId={visualEvents.find((event) => event.type === 'gameStarted')?.id ?? null}
+    ready={readyVisible}
   />
 
+  {#if !ghostsHidden}
   {#if numActiveGhosts >= 1}
     <Ghost
       {gridSize}
       {modTicks}
       {updatePeriod}
-      rowState={redRowState}
-      colState={redColState}
+      rowState={frozenGhosts?.[0]?.rowState ?? redRowState}
+      colState={frozenGhosts?.[0]?.colState ?? redColState}
       frightState={redFrightState}
       trappedState={redTrappedState}
       returnEvent={ghostReturnEvents[0]}
@@ -980,8 +1099,8 @@
       {gridSize}
       {modTicks}
       {updatePeriod}
-      rowState={pinkRowState}
-      colState={pinkColState}
+      rowState={frozenGhosts?.[1]?.rowState ?? pinkRowState}
+      colState={frozenGhosts?.[1]?.colState ?? pinkColState}
       frightState={pinkFrightState}
       trappedState={pinkTrappedState}
       returnEvent={ghostReturnEvents[1]}
@@ -994,8 +1113,8 @@
       {gridSize}
       {modTicks}
       {updatePeriod}
-      rowState={cyanRowState}
-      colState={cyanColState}
+      rowState={frozenGhosts?.[2]?.rowState ?? cyanRowState}
+      colState={frozenGhosts?.[2]?.colState ?? cyanColState}
       frightState={cyanFrightState}
       trappedState={cyanTrappedState}
       returnEvent={ghostReturnEvents[2]}
@@ -1008,13 +1127,14 @@
       {gridSize}
       {modTicks}
       {updatePeriod}
-      rowState={orangeRowState}
-      colState={orangeColState}
+      rowState={frozenGhosts?.[3]?.rowState ?? orangeRowState}
+      colState={frozenGhosts?.[3]?.colState ?? orangeColState}
       frightState={orangeFrightState}
       trappedState={orangeTrappedState}
       returnEvent={ghostReturnEvents[3]}
       color='orange'
     />
+  {/if}
   {/if}
   {/key}
 
@@ -1051,13 +1171,17 @@
   />
 
   {#key effectsRevision}
-    <GameEffects events={visualEvents} {gridSize} />
+    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} />
   {/key}
 
   <div class="audio-toolbar">
     <AudioControls
       enabled={audioEnabled}
       on:toggle={toggleAudio}
+    />
+    <ModeToggle
+      mode={$visualizerMode}
+      on:change={(event) => changeMode(event.detail)}
     />
   </div>
 </div>

@@ -8,7 +8,8 @@
   export let active = false;
   export let moving = false;
   export let deathEventId = null;
-  export let startupEventId = null;
+  // READY! is showing: Pac-Man waits without chomping
+  export let ready = false;
 
   let lastX = 13;
   let lastY = 23;
@@ -16,9 +17,6 @@
   let seenDeathEventId = null;
   let dying = false;
   let deathTimer;
-  let startedEventId = null;
-  let starting = false;
-  let startupTimer;
 
   $: showPacman = ((pacmanRowState | pacmanColState) & 0x20) === 0;
   $: posX = pacmanColState & 0x1f;
@@ -51,14 +49,7 @@
     }, GUI_TIMINGS.deathAnimationMs);
   }
 
-  $: if (startupEventId != null && startupEventId !== startedEventId) {
-    startedEventId = startupEventId;
-    clearTimeout(startupTimer);
-    starting = true;
-    startupTimer = setTimeout(() => { starting = false; }, GUI_TIMINGS.readyHoldMs);
-  }
-
-  onDestroy(() => { clearTimeout(deathTimer); clearTimeout(startupTimer); });
+  onDestroy(() => { clearTimeout(deathTimer); });
 </script>
 
 {#if showPacman || dying}
@@ -71,7 +62,7 @@
     {#key dying ? deathEventId : 'alive'}
       <div
         class="pacman"
-        class:chomping={active && moving && !dying && !starting}
+        class:chomping={active && moving && !dying && !ready}
         class:dying
         style:--dir-angle="{dying ? lastRotation : rotation}deg"
         style:--death-ms="{GUI_TIMINGS.deathAnimationMs}ms"

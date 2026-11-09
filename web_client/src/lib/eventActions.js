@@ -1,12 +1,11 @@
+// The intro and death sounds are played by the arcade sequencer (arcadeSequencer.js).
 const AUDIO_CUES = {
   pellet: 'chomp',
   powerPellet: 'frightened',
   ghostEaten: 'ghost',
   fruitEaten: 'fruit',
-  lifeLost: 'death',
   lifeGained: 'extraLife',
   levelChanged: 'intermission',
-  gameStarted: 'intro',
 };
 
 export function getEventActions(events) {

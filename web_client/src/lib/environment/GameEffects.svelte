@@ -4,6 +4,8 @@
 
   export let events = [];
   export let gridSize;
+  // READY! is shown for as long as the arcade sequence says (App.svelte)
+  export let ready = false;
 
   let visibleEvents = [];
   let latestEventId = 0;
@@ -11,7 +13,6 @@
   const durations = {
     ghostEaten: 950,
     fruitEaten: 1100,
-    gameStarted: 1250,
     gameOver: 3000,
     levelChanged: 1600,
     lifeLost: 900,
@@ -47,6 +48,9 @@
   aria-live="polite"
   aria-atomic="false"
 >
+  {#if ready}
+    <div class="effect-banner ready-banner">READY!</div>
+  {/if}
   {#each visibleEvents as event (event.id)}
     {#if event.type === 'ghostEaten'}
       <div
@@ -62,8 +66,6 @@
       >
         <span class="burst-ring" aria-hidden="true"></span>
       </div>
-    {:else if event.type === 'gameStarted'}
-      <div class="effect-banner ready-banner">READY!</div>
     {:else if event.type === 'gameOver'}
       <div class="effect-banner game-over-banner">GAME OVER</div>
     {:else if event.type === 'levelChanged'}
