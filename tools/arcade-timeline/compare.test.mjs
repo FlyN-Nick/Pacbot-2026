@@ -67,6 +67,16 @@ test('actors moving during READY are listed', () => {
   assert.deepEqual(movementDuringReady(still), []);
 });
 
+test('moves before or with READY also count', () => {
+  const early = timeline('start', [
+    { t: -0.04, type: 'actorMoved', actor: 'pinky' },
+    { t: 0, type: 'readyShown' },
+    { t: 0, type: 'actorMoved', actor: 'blinky' },
+    { t: 1.25, type: 'gameStarted' },
+  ]);
+  assert.deepEqual(movementDuringReady(early), ['pinky', 'blinky']);
+});
+
 test('movement during READY fails the start check', () => {
   const gui = [timeline('start', [
     { t: 0, type: 'readyShown' },

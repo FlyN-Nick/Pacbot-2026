@@ -44,13 +44,16 @@ export function reduceTimeline({ scenario, events }) {
   return reduced;
 }
 
-/** Actors that moved after READY appeared and before the game started. */
+/**
+ * Actors that moved before the game started. In the arcade nothing moves until
+ * READY is over, so moves before READY appears count too.
+ */
 export function movementDuringReady({ events }) {
   const ready = events.find((event) => event.type === 'readyShown');
   if (!ready) return [];
   const started = events.find((event) => event.type === 'gameStarted' && event.t >= ready.t);
   const moved = events.filter((event) => event.type === 'actorMoved' &&
-    event.t > ready.t && (!started || event.t < started.t));
+    (!started || event.t < started.t));
   return [...new Set(moved.map((event) => event.actor))];
 }
 
