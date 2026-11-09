@@ -1,5 +1,6 @@
 <script>
   import { onDestroy } from 'svelte';
+  import { GUI_TIMINGS } from '../guiTimings.js';
 
   export let gridSize;
   export let pacmanRowState;
@@ -47,14 +48,14 @@
     dying = true;
     deathTimer = setTimeout(() => {
       dying = false;
-    }, 1800);
+    }, GUI_TIMINGS.deathAnimationMs);
   }
 
   $: if (startupEventId != null && startupEventId !== startedEventId) {
     startedEventId = startupEventId;
     clearTimeout(startupTimer);
     starting = true;
-    startupTimer = setTimeout(() => { starting = false; }, 1250);
+    startupTimer = setTimeout(() => { starting = false; }, GUI_TIMINGS.readyHoldMs);
   }
 
   onDestroy(() => { clearTimeout(deathTimer); clearTimeout(startupTimer); });
@@ -73,6 +74,8 @@
         class:chomping={active && moving && !dying && !starting}
         class:dying
         style:--dir-angle="{dying ? lastRotation : rotation}deg"
+        style:--death-ms="{GUI_TIMINGS.deathAnimationMs}ms"
+        style:--death-steps={GUI_TIMINGS.deathFrames}
       />
     {/key}
   </div>
@@ -101,12 +104,12 @@
   }
 
   .pacman.dying {
-    animation: death 1800ms steps(10, end) forwards;
+    animation: death var(--death-ms) steps(var(--death-steps), end) forwards;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .pacman.chomping { animation: none; }
-    .pacman.dying { animation: reduced-death 1800ms ease-in forwards; }
+    .pacman.dying { animation: reduced-death var(--death-ms) ease-in forwards; }
   }
 
   @keyframes reduced-death {

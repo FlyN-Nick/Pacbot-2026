@@ -47,6 +47,7 @@
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
+  import { GUI_TIMINGS } from './lib/guiTimings.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
 
   const eventTracker = createGameEventTracker();
@@ -147,10 +148,10 @@
         pickedFruits[type] = (pickedFruits[type] || 0) + 1;
         pickedFruits = { ...pickedFruits };
       }
-      if (event.type === 'gameStarted') holdGameplayForAnimation(1250);
+      if (event.type === 'gameStarted') holdGameplayForAnimation(GUI_TIMINGS.readyHoldMs);
       if (event.type === 'lifeLost') {
         deathShouldResume = Boolean(gameWasRunning);
-        holdGameplayForAnimation(1800, deathShouldResume);
+        holdGameplayForAnimation(GUI_TIMINGS.deathHoldMs, deathShouldResume);
       }
     }
     ghostReturnEvents = ghostReturnEvents;
