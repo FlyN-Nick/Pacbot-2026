@@ -1,5 +1,5 @@
 // Reduce timelines to named measurements and compare ours with the arcade reference.
-import { GAPS, COUNTS, SIREN } from './gaps.mjs';
+import { GAPS, COUNTS, SIREN, GUI_NOT_IMPLEMENTED } from './gaps.mjs';
 
 const ARCADE_FPS = 60.606;
 
@@ -62,7 +62,6 @@ export function movementDuringReady({ events }) {
 /** One row per measurement: pass, fail, did not complete, not implemented, or no reference. */
 export function compareTimelines({ reference, gui, gameFps }) {
   const ours = Object.assign({}, ...gui.map(reduceTimeline));
-  const seen = new Set(gui.flatMap(({ events }) => events.map((event) => event.type)));
 
   // [key, tolerance kind, unit, event types that measure it]
   const measurements = [
@@ -82,7 +81,7 @@ export function compareTimelines({ reference, gui, gameFps }) {
     const tolerance = toleranceFor(kind, gameFps);
     let status;
     if (arcade === undefined) status = 'no reference';
-    else if (!types.some((type) => seen.has(type))) status = 'not implemented';
+    else if (types.some((type) => GUI_NOT_IMPLEMENTED.has(type))) status = 'not implemented';
     else if (measured === undefined) status = 'did not complete';
     else status = Math.abs(measured - arcade) <= tolerance + 1e-9 ? 'pass' : 'fail';
     return { key, status, arcade, ours: measured, tolerance, unit };

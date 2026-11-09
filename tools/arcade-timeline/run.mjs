@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
-import { freePort, createCleanup, startProcess } from './processes.mjs';
+import { freePort, createCleanup, startProcess, runWithTimeout } from './processes.mjs';
 import { compareTimelines, reduceTimeline, formatReport } from './compare.mjs';
 import { SCENARIOS } from './gui-scenarios.mjs';
 
@@ -70,31 +70,33 @@ async function connectCommands(wsPort, cleanup) {
 
 async function runScenario(scenario, page, send) {
   const events = () => page.evaluate(() => window.__arcadeTimeline.events());
-  const ctx = {
-    send,
-    moveTo: (row, col) => send('x' + String.fromCharCode(row) + String.fromCharCode(col)),
-    frame: () => page.evaluate(() => window.__arcadeTimeline.frame()),
-    hasEvent: async (type) => (await events()).some((event) => event.type === type),
-    sleep,
-    async waitForEvent(type, timeoutMs) {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        if (await ctx.hasEvent(type)) return;
-        await sleep(100);
-      }
-      throw new Error(`no ${type} within ${timeoutMs} ms`);
-    },
-  };
 
   send('r');
   await sleep(500);
   await page.evaluate(() => window.__arcadeTimeline.reset());
   let problem = null;
   try {
-    await Promise.race([
-      scenario.run(ctx),
-      sleep(SCENARIO_TIMEOUT_MS).then(() => { throw new Error(`timed out after ${SCENARIO_TIMEOUT_MS} ms`); }),
-    ]);
+    await runWithTimeout((signal) => {
+      // Every action stops once the scenario has timed out, so an abandoned
+      // scenario can't keep driving the server during the next one.
+      const live = () => { if (signal.aborted) throw new Error('scenario cancelled'); };
+      const ctx = {
+        send: (cmd) => { live(); send(cmd); },
+        moveTo: (row, col) => ctx.send('x' + String.fromCharCode(row) + String.fromCharCode(col)),
+        frame: () => { live(); return page.evaluate(() => window.__arcadeTimeline.frame()); },
+        hasEvent: async (type) => { live(); return (await events()).some((event) => event.type === type); },
+        sleep: async (ms) => { await sleep(ms); live(); },
+        async waitForEvent(type, timeoutMs) {
+          const deadline = Date.now() + timeoutMs;
+          while (Date.now() < deadline) {
+            if (await ctx.hasEvent(type)) return;
+            await ctx.sleep(100);
+          }
+          throw new Error(`no ${type} within ${timeoutMs} ms`);
+        },
+      };
+      return scenario.run(ctx);
+    }, SCENARIO_TIMEOUT_MS);
   } catch (error) {
     problem = error.message;
   }

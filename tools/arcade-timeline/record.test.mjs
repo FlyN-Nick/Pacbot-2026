@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkRomDir, isRomsetGood, mergeGhostEaten } from './record.mjs';
+import { checkRomDir, isRomsetGood, mergeGhostEaten, missingScenarios } from './record.mjs';
 
 const folderWith = (...files) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'roms-'));
@@ -66,4 +66,20 @@ test('the fright and ghost-eating runs merge into one ghostEaten timeline', () =
   assert.ok(ghostEaten.t > 5.92);
   const moved = merged.events.find((e) => e.type === 'actorMoved');
   assert.ok(Math.abs(moved.t - ghostEaten.t - 0.98) < 1e-9);
+});
+
+test('a ROM folder inside the repository is refused', () => {
+  const repo = folderWith();
+  const inside = path.join(repo, 'roms');
+  fs.mkdirSync(inside);
+  fs.writeFileSync(path.join(inside, 'pacman.zip'), '');
+  const result = checkRomDir(inside, repo);
+  assert.equal(result.ok, false);
+  assert.match(result.message, /outside this repository/);
+});
+
+test('missing scenarios are listed so a partial recording cannot replace the reference', () => {
+  const recorded = [{ scenario: 'start' }, { scenario: 'ghostEaten' }];
+  assert.deepEqual(missingScenarios(['start', 'death', 'ghostEaten'], recorded), ['death']);
+  assert.deepEqual(missingScenarios(['start'], recorded), []);
 });

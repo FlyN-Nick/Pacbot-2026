@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { freePort, createCleanup, startProcess } from './processes.mjs';
+import { freePort, createCleanup, startProcess, runWithTimeout } from './processes.mjs';
 
 const isRunning = (pid) => {
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -54,4 +54,33 @@ test('startProcess rejects on timeout and still cleans up', async () => {
   } catch (e) { error = e; }
   assert.match(error?.message ?? '', /timed out/);
   await cleanup.run();
+});
+
+test('a second cleanup run waits for the one in progress', async () => {
+  const cleanup = createCleanup();
+  let finished = false;
+  cleanup.add(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    finished = true;
+  });
+  const first = cleanup.run();
+  await cleanup.run();
+  assert.equal(finished, true);
+  await first;
+});
+
+test('runWithTimeout returns the result without waiting for the timeout', async () => {
+  const started = Date.now();
+  assert.equal(await runWithTimeout(async () => 'done', 60000), 'done');
+  assert.ok(Date.now() - started < 1000);
+});
+
+test('runWithTimeout stops work that runs too long', async () => {
+  let stoppedBySignal = false;
+  await assert.rejects(runWithTimeout(async (signal) => {
+    while (!signal.aborted) await new Promise((resolve) => setTimeout(resolve, 10));
+    stoppedBySignal = true;
+  }, 50), /timed out after 50 ms/);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(stoppedBySignal, true);
 });

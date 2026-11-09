@@ -57,16 +57,14 @@
   const timelineParams = parseTimelineParams(window.location.search);
   const timeline = createTimeline({ enabled: timelineParams.enabled });
   const frameTimelineTracker = createFrameTimelineTracker();
-  const recordMusic = ({ name, duration }) => {
-    if (name !== 'intro') return;
-    const startMs = performance.now();
-    timeline.record('musicStarted', {}, { atMs: startMs });
-    timeline.record('musicEnded', {}, { atMs: startMs + duration * 1000 });
-  };
+  // Record when the start music really starts and stops (it can be cut short)
+  const recordMusicStart = ({ name }) => { if (name === 'intro') timeline.record('musicStarted'); };
+  const recordMusicEnd = ({ name }) => { if (name === 'intro') timeline.record('musicEnded'); };
 
   const audioController = createAudioController({
     assetBase: `${import.meta.env.BASE_URL}audio`,
-    onCueStarted: recordMusic,
+    onCueStarted: recordMusicStart,
+    onCueEnded: recordMusicEnd,
   });
   const fruitTypeForLevel = (level) => ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(level, 1) - 1, 12)];
   let audioEnabled = false;

@@ -8,16 +8,22 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { reduceTimeline } from './compare.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.resolve(here, '../..');
 // fright and ghostEaten are recorded separately and merged (see mergeGhostEaten)
 const SCENARIOS = ['start', 'death', 'fright', 'ghostEaten', 'levelComplete', 'siren'];
 const MAME_TIMEOUT_MS = 120000;
 
 /** Check that PACMAN_ROM_DIR names a folder holding the pacman (Midway) set. */
-export function checkRomDir(dir) {
+export function checkRomDir(dir, repoRoot = repo) {
   if (!dir) {
     return { ok: false, message: 'Set PACMAN_ROM_DIR to the folder containing pacman.zip (kept outside this repository).' };
   }
   if (!fs.existsSync(dir)) return { ok: false, message: `PACMAN_ROM_DIR folder does not exist: ${dir}` };
+  // ROMs are copyrighted and this repository is public
+  const relative = path.relative(fs.realpathSync(repoRoot), fs.realpathSync(dir));
+  if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return { ok: false, message: `Keep the ROM folder outside this repository (got ${dir}).` };
+  }
   if (fs.existsSync(path.join(dir, 'pacman.zip'))) return { ok: true };
   let message = `No pacman.zip in ${dir}. The recorder needs the pacman (Midway) ROM set.`;
   if (fs.existsSync(path.join(dir, 'puckman.zip'))) message += ' puckman.zip is a different ROM set (Namco Puck Man).';
@@ -46,6 +52,12 @@ export function mergeGhostEaten(fright, eat) {
       .map((event) => ({ ...event, t: event.t - eaten.t + afterFright }))
     : [];
   return { scenario: 'ghostEaten', source: 'arcade', events: [...fright.events, ...eatEvents] };
+}
+
+/** Expected scenarios that produced no timeline. */
+export function missingScenarios(expected, timelines) {
+  const recorded = new Set(timelines.map((timeline) => timeline.scenario));
+  return expected.filter((scenario) => !recorded.has(scenario));
 }
 
 function fail(message) {
@@ -92,6 +104,8 @@ function main() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Checked before merging, so a failed fright or ghostEaten run counts
+  const missing = missingScenarios(SCENARIOS, timelines);
   const fright = timelines.find((timeline) => timeline.scenario === 'fright');
   const eat = timelines.find((timeline) => timeline.scenario === 'ghostEaten');
   if (fright && eat) {
@@ -106,6 +120,9 @@ function main() {
     console.log(`  ${key.padEnd(34)} ${unit === 'count' ? value : `${value.toFixed(3)}s`}`);
   }
 
+  if (process.argv.includes('--write-reference') && missing.length) {
+    fail(`\nNot writing the reference: no recording for ${missing.join(', ')}.`);
+  }
   if (process.argv.includes('--write-reference')) {
     const source = `MAME pacman, ${new Date().toISOString().slice(0, 10)}`;
     const reference = Object.fromEntries(Object.entries(reduced)

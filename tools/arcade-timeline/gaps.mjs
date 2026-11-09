@@ -26,3 +26,7 @@ export const COUNTS = [
 
 // Each sirenStep event n (1-based) yields siren.step<n>.pelletsRemaining and siren.step<n>.loopPeriod.
 export const SIREN = { scenario: 'siren', type: 'sirenStep' };
+
+// Events the visualizer does not produce yet. Measurements that need one are
+// reported as "not implemented"; remove a type here once the visualizer emits it.
+export const GUI_NOT_IMPLEMENTED = new Set(['sirenStep', 'mazeFlash', 'eyesSoundStarted', 'eyesSoundEnded']);

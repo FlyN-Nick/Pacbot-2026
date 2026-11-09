@@ -28,10 +28,17 @@ test('a gap whose end never comes did not complete', () => {
   assert.equal(row(rows, 'start.musicLength').status, 'did not complete');
 });
 
-test('a gap whose events never appear is not implemented', () => {
+test('a gap whose events never appear did not complete when the GUI implements them', () => {
+  // e.g. audio locked in the browser: the music never starts
   const gui = [timeline('start', [{ t: 0, type: 'readyShown' }])];
   const rows = compareTimelines({ reference: { 'start.musicLength': ref(4.22) }, gui, gameFps: 24 });
-  assert.equal(row(rows, 'start.musicLength').status, 'not implemented');
+  assert.equal(row(rows, 'start.musicLength').status, 'did not complete');
+});
+
+test('a gap using an event the GUI does not produce yet is not implemented', () => {
+  const gui = [timeline('levelComplete', [{ t: 0, type: 'levelCleared' }])];
+  const rows = compareTimelines({ reference: { 'levelComplete.toFirstFlash': ref(1.93) }, gui, gameFps: 24 });
+  assert.equal(row(rows, 'levelComplete.toFirstFlash').status, 'not implemented');
 });
 
 test('reference keys the GUI cannot produce yet do not stop the report', () => {

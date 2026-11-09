@@ -220,3 +220,16 @@ test('onCueStarted is not called while audio is disabled', async () => {
   await controller.play('intro');
   assert.deepEqual(started, []);
 });
+
+test('onCueEnded reports when a cue really ends, including when stopped early', async () => {
+  const f = fixture();
+  const ended = [];
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher,
+    onCueEnded: (cue) => ended.push(cue) });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('intro');
+  assert.deepEqual(ended, []);
+  controller.stopAll();
+  assert.deepEqual(ended, [{ name: 'intro' }]);
+});

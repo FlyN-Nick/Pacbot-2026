@@ -16,7 +16,8 @@ export function createAudioController({
   contextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(),
   assetBase = '/audio',
   fetcher = (...args) => globalThis.fetch(...args),
-  onCueStarted = () => {}
+  onCueStarted = () => {},
+  onCueEnded = () => {}
 } = {}) {
   let context;
   let master;
@@ -179,6 +180,7 @@ export function createAudioController({
       active.set(name, entry);
       source.onended = () => {
         if (active.get(name) === entry) active.delete(name);
+        onCueEnded({ name });
       };
       source.start();
       onCueStarted({ name, duration: buffer.duration });

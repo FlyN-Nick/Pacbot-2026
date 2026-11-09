@@ -17,28 +17,51 @@ export function freePort() {
 /** Cleanup steps, run once in reverse order of registration. */
 export function createCleanup() {
   const steps = [];
-  let ran = false;
+  let running = null;
 
-  async function run() {
-    if (ran) return;
-    ran = true;
-    for (const step of steps.reverse()) {
-      try { await step(); } catch { /* Keep cleaning up after a failed step. */ }
-    }
+  // Later calls (from a signal or a finally block) wait for the same run.
+  function run() {
+    running ??= (async () => {
+      for (const step of steps.reverse()) {
+        try { await step(); } catch { /* Keep cleaning up after a failed step. */ }
+      }
+    })();
+    return running;
   }
 
   return {
     add(step) { steps.push(step); },
     run,
     installSignalHandlers() {
+      // Stay installed, so a second Ctrl+C can't interrupt cleanup.
       for (const signal of ['SIGINT', 'SIGTERM']) {
-        process.once(signal, async () => {
+        process.on(signal, async () => {
           await run();
           process.exit(130);
         });
       }
     },
   };
+}
+
+/**
+ * Run work(signal) with a time limit. On timeout the signal is aborted (so the
+ * work can stop) and the promise rejects. The timer never outlives the work.
+ */
+export async function runWithTimeout(work, timeoutMs) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`timed out after ${timeoutMs} ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([work(controller.signal), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Stop a process group: SIGTERM, then SIGKILL after 2 s.
