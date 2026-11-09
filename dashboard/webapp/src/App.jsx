@@ -40,7 +40,7 @@ export default function App() {
         <section className="right-panel">
           <RobotTopDown sensors={robotState?.sensors} direction={activeDirection} send={send} />
           <LogControls send={send} />
-          <Controls activeDirection={activeDirection} onDirectionChange={setActiveDirection} send={send} />
+          <Controls onDirectionChange={setActiveDirection} send={send} />
         </section>
         <ConsolePanel logs={logs} onClear={clearLogs} send={send} />
       </main>

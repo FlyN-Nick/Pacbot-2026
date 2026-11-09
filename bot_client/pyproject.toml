@@ -20,4 +20,4 @@ dqn = [
 package = false
 
 [tool.uv.sources]
-pacbot-rl-models = { path = "../curc-pacbot-rl/model_package" }
+pacbot-rl-models = { path = "../curc-pacbot-rl/model_package", editable = true }

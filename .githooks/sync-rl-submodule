@@ -1,0 +1,76 @@
+#!/bin/sh
+# Keep curc-pacbot-rl at the commit Pacbot-2026 records after a pull or
+# checkout, unless someone is working on RL code in it. Called by the hooks
+# in this folder (enabled by scripts/setup.sh).
+#
+#   detached at a pushed commit   -> git submodule update
+#   on the tracked branch, behind -> fast-forward it
+#   own branch, unpushed commits,
+#   or uncommitted edits          -> leave it alone and say so
+#
+# Pass --after-rebase from post-rewrite, which runs before git removes its
+# rebase state.
+
+sub=curc-pacbot-rl
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# Hooks run with GIT_DIR and friends pointing at the root repo; clear them
+# so git -C "$sub" talks to the submodule.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+cd "$root" || exit 0
+
+# Don't touch anything halfway through a rebase; post-rewrite runs at the end.
+if [ "$1" != --after-rebase ]; then
+	for d in rebase-merge rebase-apply; do
+		[ -d "$(git rev-parse --git-path "$d")" ] && exit 0
+	done
+fi
+
+note() { echo "[$sub] $*" >&2; }
+
+recorded=$(git ls-files -s -- "$sub" | awk '$1 == "160000" { print $2 }')
+[ -n "$recorded" ] || exit 0
+
+if [ ! -e "$sub/.git" ]; then
+	git submodule update --init -- "$sub"
+	exit 0
+fi
+
+current=$(git -C "$sub" rev-parse HEAD 2>/dev/null) || exit 0
+[ "$current" = "$recorded" ] && exit 0
+
+short=$(printf %.7s "$recorded")
+tracked=$(git config -f .gitmodules --get "submodule.$sub.branch" || echo main)
+branch=$(git -C "$sub" symbolic-ref -q --short HEAD)
+
+if [ -n "$(git -C "$sub" status --porcelain --untracked-files=no)" ]; then
+	note "has uncommitted RL edits; leaving it (Pacbot-2026 records $short)"
+	exit 0
+fi
+
+if [ -n "$branch" ] && [ "$branch" != "$tracked" ]; then
+	note "keeping your RL branch '$branch' (Pacbot-2026 records $short)"
+	exit 0
+fi
+
+# Make sure the recorded commit is available locally before comparing.
+git -C "$sub" cat-file -e "$recorded^{commit}" 2>/dev/null || git -C "$sub" fetch -q origin
+
+# Commits that aren't on any remote branch are someone's RL work.
+if [ -z "$(git -C "$sub" branch -r --contains HEAD 2>/dev/null)" ]; then
+	note "keeping your unpushed RL commits (Pacbot-2026 records $short)"
+	exit 0
+fi
+
+if [ -n "$branch" ]; then
+	if git -C "$sub" merge-base --is-ancestor HEAD "$recorded" 2>/dev/null; then
+		git -C "$sub" merge -q --ff-only "$recorded"
+	elif git -C "$sub" merge-base --is-ancestor "$recorded" HEAD 2>/dev/null; then
+		note "keeping your RL $branch, which is ahead of the recorded $short"
+	else
+		note "your RL $branch and Pacbot-2026 ($short) have diverged; merge with: git -C $sub pull"
+	fi
+	exit 0
+fi
+
+git submodule update -- "$sub"

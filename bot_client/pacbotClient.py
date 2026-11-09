@@ -6,7 +6,7 @@ import asyncio
 
 # Websockets (for communication with the server)
 from websockets.sync.client import connect, ClientConnection # type: ignore
-from websockets.exceptions import ConnectionClosedError # type: ignore
+from websockets.exceptions import ConnectionClosed # type: ignore
 from websockets.typing import Data # type: ignore
 
 # Game state
@@ -55,29 +55,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 	parser.add_argument('--games', type=int, default=-1, help='Number of games to run, -1 for infinite')
 	parser.add_argument('--delay', type=int, default=0, help='Delay between games in milliseconds')
 	parser.add_argument('--output', type=str, default='', help='Output file for scores')
-	parser.add_argument('--strategy', choices=['astar', 'dqn'], default='astar',
-	                    help='Decision strategy: astar (default) or dqn')
+	parser.add_argument('--strategy', choices=['astar', 'dqn', 'hybrid'], default='astar',
+	                    help='Decision strategy: astar, dqn, or hybrid (default: astar)')
 	parser.add_argument('--checkpoint', type=str, default=None,
-	                    help='Path to DQN checkpoint .pt file (required when --strategy=dqn)')
-	parser.add_argument('--hybrid_mode', action=argparse.BooleanOptionalAction, default=True,
-	                    help='(DQN only) Fall back to A* when any ghost is within 2 tiles (default: on)')
+	                    help='Path to DQN checkpoint .pt file (required for dqn or hybrid)')
 	parser.add_argument('--competition_mode', action=argparse.BooleanOptionalAction, default=True,
 	                    help='Suppress sending location updates to the game server (for physical competition use)')
 	parser.add_argument('--force_no_bot', action='store_true',
 	                    help='Skip robot socket connection (simulate without physical bot)')
 	args = parser.parse_args(argv)
-	if args.strategy == 'dqn' and not args.checkpoint:
-		parser.error('--checkpoint is required when --strategy=dqn')
+	if args.strategy in ('dqn', 'hybrid') and not args.checkpoint:
+		parser.error(f'--checkpoint is required when --strategy={args.strategy}')
 	if args.force_no_bot:
 		args.competition_mode = False
 	return args
 
 
 def make_decision_module(args: argparse.Namespace, state: GameState) -> object:
-	if args.strategy == 'dqn':
+	if args.strategy in ('dqn', 'hybrid'):
 		from dqn_module import DQNDecisionModule
 		return DQNDecisionModule(state, args.checkpoint, args.debug,
-		                        hybrid_mode=args.hybrid_mode,
+		                        hybrid_mode=(args.strategy == 'hybrid'),
 		                        force_no_bot=args.force_no_bot)
 	return DecisionModule(state, args.debug, force_no_bot=args.force_no_bot)
 
@@ -180,8 +178,10 @@ class PacbotClient:
 			# Try to receive messages (and skip to except in case of an error)
 			try:
 
-				# Receive a message from the connection
-				message: Data = self.connection.recv()
+				# Receive a message from the connection. The blocking recv()
+				# runs in a worker thread so it does not stall the event loop
+				# (and starve the decision loop)
+				message: Data = await asyncio.to_thread(self.connection.recv)
 
 				# Convert the message to bytes, if necessary
 				messageBytes: bytes
@@ -223,19 +223,24 @@ class PacbotClient:
 				elif should_resume:
 					await debug_server.resume_game()
 
-				# Write a response back to the server if necessary
+				# Write a response back to the server if necessary. Sending is
+				# paced by the per-message tick countdown, so it stays in this
+				# loop (tied to inbound ticks); the blocking send() is offloaded
+				# to a worker thread to keep the event loop responsive
 				if self.state.writeServerBuf and self.state.writeServerBuf[0].tick():
 					response: bytes = self.state.writeServerBuf.popleft().getBytes()
 					if not self.args.competition_mode:
-						self.connection.send(response)
+						await asyncio.to_thread(self.connection.send, response)
 
 				# Free the event loop to allow another decision
 				await asyncio.sleep(0)
 
-			# Break once the connection is closed
-			except ConnectionClosedError as e:
+			# Break once the connection is closed (clean or abnormal closures
+			# both subclass ConnectionClosed)
+			except ConnectionClosed as e:
 				print(f'{RED}Connection lost...{NORMAL}', e)
 				self.state.setConnectionStatus(False)
+				self._socketOpen = False
 				break
 
 def gpio_init():
@@ -266,11 +271,28 @@ async def main(args: argparse.Namespace):
 	loop.stop()
 
 
+def report_rl_checkout() -> None:
+	'''
+	Warn if curc-pacbot-rl doesn't match what Pacbot-2026 records
+	(see submoduleCheck.py); deliberate RL branches are used as-is.
+	'''
+	from pathlib import Path
+	from submoduleCheck import check_rl_checkout
+
+	result = check_rl_checkout(Path(__file__).resolve().parents[1])
+	if result is None:
+		return
+	level, message = result
+	color = YELLOW if level == 'warning' else CYAN
+	print(f'{color}[RL] {message}{NORMAL}')
+
+
 def run() -> None:
 	import signal
 	import low_level
 
 	args = parse_args()
+	report_rl_checkout()
 	signal.signal(signal.SIGINT, signal.SIG_DFL)
 	low_level.connect(force_no_bot=args.force_no_bot)
 	asyncio.run(main(args))

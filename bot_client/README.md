@@ -20,7 +20,7 @@ For DQN, install the optional dependencies and provide a checkpoint file explici
 
 ```sh
 uv sync --extra dqn
-uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint /absolute/path/to/checkpoint.pt --force_no_bot
+uv run --extra dqn python pacbotClient.py --strategy dqn --checkpoint ../curc-pacbot-rl/src/best_checkpoints/urlriljg/q_net-iter0619000.ckpt.pt --force_no_bot
 ```
 
 The bot supports Python 3.11 and newer. The current compatibility checks cover Python 3.11–3.14. DQN availability depends on PyTorch wheels for the operating system and architecture; on Intel macOS, the configured PyTorch range supports Python 3.11–3.12.
@@ -29,5 +29,6 @@ Other useful files:
 
 - `decisionModule.py`: A* decision module with an asynchronous loop and game state locking
 - `dqn_module.py`: DQN decision module
+- `pacbotAgent.py`: upstream's minimal agent template (not used by this client)
 - `gameState.py`: parsed game state and prediction helpers
 - `walls.py`: binary maze walls, matching `initWalls` in the server

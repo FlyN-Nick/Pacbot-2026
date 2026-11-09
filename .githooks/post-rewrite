@@ -1,0 +1,4 @@
+#!/bin/sh
+# After git pull --rebase or git rebase (not commit --amend): sync curc-pacbot-rl.
+[ "$1" = rebase ] || exit 0
+exec sh "$(dirname "$0")/sync-rl-submodule" --after-rebase

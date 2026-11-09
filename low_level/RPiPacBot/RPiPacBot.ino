@@ -41,11 +41,14 @@ void setup() {
 
 #define DRIVE_UPDATE_MS  10   // heading PID rate (~100 Hz)
 #define CENTER_UPDATE_MS 100   // centering PID rate (~20 Hz)
+#define MANUAL_CMD_TIMEOUT_MS 500  // stop manual motors if commands stop arriving
 
 void loop() {
     static uint32_t lastRead   = 0;
     static uint32_t lastDrive  = 0;
     static uint32_t lastCenter = 0;
+    static uint32_t lastMotorCmd  = 0;
+    static bool     manualRunning = false;
 
     // -- Drive mode changes (handled in every state) -------------------
     DriveMode newMode;
@@ -93,6 +96,19 @@ void loop() {
             driveSetMode(DRIVE_MANUAL, 0);
         }
         motorsSetAll(motorCmd);
+        lastMotorCmd  = millis();
+        manualRunning = false;
+        for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+            if (motorCmd[i].speed > 0) manualRunning = true;
+        }
+    }
+
+    // Manual-mode watchdog: the dashboard resends motor commands while a
+    // key is held, so silence means a lost stop packet or a dead link.
+    if (manualRunning && driveGetMode() == DRIVE_MANUAL &&
+        millis() - lastMotorCmd >= MANUAL_CMD_TIMEOUT_MS) {
+        motorsStop();
+        manualRunning = false;
     }
 
     if (driveGetMode() == DRIVE_CARDINAL_LOCKED) {

@@ -196,6 +196,8 @@ func (s *server) handleUDP(data []byte, addr *net.UDPAddr) {
 			log.Printf("Robot reconnected from %s", addr)
 		}
 		s.robot.addr = addr
+		// Reply right away so a broadcasting robot locks onto our IP
+		go s.sendToRobot([]byte{CmdPing})
 		go s.resendPidGains()
 	}
 	s.robot.connected = true

@@ -17,10 +17,29 @@ static uint32_t      lastDataSent   = 0;
 static bool          deviceInfoSent = false;
 static uint32_t      lastWiFiCheck  = 0;
 static bool          wifiWasConnected = false;
+static bool          serverLocked   = false;  // serverIP is the dashboard, not broadcast
 
 #define WIFI_CHECK_INTERVAL_MS 2000
 
 // -- Helpers -----------------------------------------------------------
+
+// Point serverIP at the dashboard: the fixed SERVER_IP if configured,
+// otherwise the subnet broadcast address until the dashboard replies.
+static void resetServerIP() {
+#ifdef SERVER_IP
+    serverIP.fromString(SERVER_IP);
+    serverLocked = true;
+#else
+    IPAddress local = WiFi.localIP();
+    IPAddress mask  = WiFi.subnetMask();
+    for (uint8_t i = 0; i < 4; i++) serverIP[i] = local[i] | ~mask[i];
+    serverLocked = false;
+    Serial.print("[comms] IP ");
+    Serial.print(local);
+    Serial.print(", searching for dashboard via ");
+    Serial.println(serverIP);
+#endif
+}
 
 static void sendPacket(const uint8_t *buf, uint8_t len) {
     udp.beginPacket(serverIP, SERVER_PORT);
@@ -45,6 +64,14 @@ static void handleRx() {
     while (packetSize > 0) {
         int n = udp.read(rxBuf, sizeof(rxBuf));
         if (n < 1) { packetSize = udp.parsePacket(); continue; }
+
+        // First packet from the dashboard tells us where it is
+        if (!serverLocked && udp.remotePort() == SERVER_PORT) {
+            serverIP     = udp.remoteIP();
+            serverLocked = true;
+            Serial.print("[comms] Dashboard found at ");
+            Serial.println(serverIP);
+        }
 
         uint8_t type = rxBuf[0];
 
@@ -352,8 +379,6 @@ void commsSharedInit() {
 }
 
 void commsSetup() {
-    serverIP.fromString(SERVER_IP);
-
     WiFi.mode(WIFI_STA);
     if (strlen(WIFI_PASSWORD) == 0) {
         WiFi.begin(WIFI_SSID);
@@ -368,6 +393,7 @@ void commsSetup() {
 
     udp.begin(0);  // ephemeral port -- server learns it from first packet
     wifiWasConnected = true;
+    resetServerIP();
 
     // Send first alive immediately (device info is sent once core 0 signals ready)
     sendAlive();
@@ -398,6 +424,7 @@ void commsLoop() {
             udp.begin(0);
             wifiWasConnected = true;
             deviceInfoSent   = false;
+            resetServerIP();  // our address (and the dashboard's) may have changed
             sendAlive();
             lastAliveSent = now;
         }

@@ -5,11 +5,14 @@
 // =====================================================================
 
 // -- WiFi credentials --------------------------------------------------
-#define WIFI_SSID     "MdrcPacbot"
-#define WIFI_PASSWORD ""
+// WIFI_SSID / WIFI_PASSWORD live in wifi_secrets.h (gitignored).
+// Copy wifi_secrets.example.h to wifi_secrets.h and fill it in.
+#include "wifi_secrets.h"
 
-// -- Server (the PC running test_server.py) ----------------------------
-#define SERVER_IP     "192.168.8.229"
+// -- Server (the PC running the dashboard) -----------------------------
+// By default the robot broadcasts on the local subnet until the dashboard
+// replies, then locks onto the dashboard's IP. Define SERVER_IP in
+// wifi_secrets.h to skip discovery and always send to a fixed address.
 #define SERVER_PORT   9000
 
 // -- Timing ------------------------------------------------------------

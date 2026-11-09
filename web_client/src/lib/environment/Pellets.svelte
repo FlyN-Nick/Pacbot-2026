@@ -61,6 +61,18 @@
     cursor: auto;
   }
 
+  /* Intersection */
+
+  /* A ring rather than a fill, so it shows through the bot's cell colors */
+  .intersection {
+    box-shadow: inset 0 0 0 2px rgba(255,255,0,0.8);
+  }
+
+  /* The bot's planned path (.path, added at runtime) takes precedence */
+  .intersection:global(.path) {
+    box-shadow: none;
+  }
+
   /* Super pellet */
 
   .grid-element .super {
@@ -82,6 +94,8 @@
   export let gridSize;
   export let pelletGrid;
   export let botSocket;
+  export let intersectionGrid;
+  export let showIntersections;
 
   let innerWidth = 0
   let innerHeight = 0
@@ -93,6 +107,7 @@
 
   const pelletMods = [' hidden', '', ' super']
 
+  $: intersectionMods = ['', showIntersections ? ' intersection' : '']
   $: pellet_size = ~~(gridSize/6 + 0.5)
 
 </script>
@@ -106,7 +121,7 @@
         <button
           on:click={() => hello(i, j)}
           id={`grid-element-${i}-${j}`}
-          class={'grid-element' + pelletMods[pelletGrid[i][j]]}
+          class={'grid-element' + pelletMods[pelletGrid[i][j]] + intersectionMods[intersectionGrid[i][j]]}
           style:--grid-size='{gridSize}px'
         >
           <span

@@ -16,6 +16,13 @@ class CheckpointArgumentTests(unittest.TestCase):
         args = pacbotClient.parse_args(["--strategy", "astar"])
         self.assertIsNone(args.checkpoint)
 
+    def test_hybrid_requires_checkpoint(self):
+        with patch("sys.stderr") as stderr:
+            with self.assertRaises(SystemExit) as raised:
+                pacbotClient.parse_args(["--strategy", "hybrid"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--checkpoint", "".join(call.args[0] for call in stderr.write.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()
