@@ -145,7 +145,10 @@ async function main() {
         }
       }
     }
-    console.log('\n' + formatReport(compareTimelines({ reference, gui: timelines, gameFps: config.GameFPS })));
+    const modeIndex = process.argv.indexOf('--mode');
+    const mode = modeIndex !== -1 ? process.argv[modeIndex + 1] : 'arcade';
+    console.log(`\nMode: ${mode}`);
+    console.log(formatReport(compareTimelines({ reference, gui: timelines, gameFps: config.GameFPS, mode })));
   } finally {
     await cleanup.run();
   }

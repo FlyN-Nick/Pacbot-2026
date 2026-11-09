@@ -15,7 +15,8 @@ Recording the arcade side also needs MAME (`brew install mame`) and the `pacman`
 ## Commands
 
 ```sh
-npm run compare                                  # our visualizer vs. the committed reference
+npm run compare                                  # our visualizer vs. the committed reference (arcade mode)
+npm run compare -- --mode competition            # pauses must be zero; game rules stay informational
 npm run compare -- --dump gui-timeline.json      # also save our raw timelines
 PACMAN_ROM_DIR=~/roms npm run record             # record the arcade in MAME
 PACMAN_ROM_DIR=~/roms npm run record -- --write-reference   # ...and update the reference
@@ -25,6 +26,9 @@ npm test                                         # unit tests (no browser or ROM
 `compare` starts its own game server and visualizer on free ports, so it can run next to a server you already have open.
 
 ## Reading the report
+
+Each measurement has a category: **server** (game rules such as fright length, used in competition; shown as `INFO (game rule)`, never a failure), **pause** (holds the game; matches the arcade in arcade mode, must be zero in competition mode), or **presentation** (sound and animation; matches the arcade in both modes).
+
 
 - `PASS` / `FAIL`: our value is within / outside the tolerance (one arcade frame for animation, 50 ms for audio, one server frame for game-tick timing, exact for counts).
 - `DID NOT COMPLETE`: the measurement started but its ending event never came.

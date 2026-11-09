@@ -140,3 +140,37 @@ test('a siren step without a measurable loop period keeps only its pellet count'
   assert.deepEqual(siren['siren.step1.pelletsRemaining'], { value: 27, unit: 'count' });
   assert.equal('siren.step1.loopPeriod' in siren, false);
 });
+
+test('game-rule measurements are informational, not failures', () => {
+  const gui = [timeline('ghostEaten', [{ t: 0, type: 'frightStarted' }, { t: 19.8, type: 'frightEnded' }])];
+  const fright = row(compareTimelines({ reference: { 'ghostEaten.frightLength': ref(5.92) }, gui, gameFps: 24 }),
+    'ghostEaten.frightLength');
+  assert.equal(fright.status, 'info');
+  assert.match(formatReport([fright]), /INFO \(game rule\)/);
+});
+
+test('in competition mode, pauses must be zero', () => {
+  const reference = { 'start.readyToGameStarted': ref(4.21) };
+  const held = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
+  const instant = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 0.01, type: 'gameStarted' }])];
+  const heldRow = row(compareTimelines({ reference, gui: held, gameFps: 24, mode: 'competition' }), 'start.readyToGameStarted');
+  assert.equal(heldRow.status, 'fail');
+  assert.equal(heldRow.target, 0);
+  assert.equal(row(compareTimelines({ reference, gui: instant, gameFps: 24, mode: 'competition' }),
+    'start.readyToGameStarted').status, 'pass');
+});
+
+test('in competition mode, presentation still targets the arcade', () => {
+  const gui = [timeline('death', [{ t: 0, type: 'deathFrame', frame: 1 }, { t: 1.8, type: 'deathEnded' }])];
+  const rows = compareTimelines({ reference: { 'death.animationLength': ref(2.64) }, gui, gameFps: 24, mode: 'competition' });
+  assert.equal(row(rows, 'death.animationLength').status, 'fail');
+  assert.equal(row(rows, 'death.animationLength').target, 2.64);
+});
+
+test('the READY movement check does not apply in competition mode', () => {
+  const gui = [timeline('start', [
+    { t: 0, type: 'readyShown' }, { t: 0.2, type: 'actorMoved', actor: 'blinky' }, { t: 0.3, type: 'gameStarted' },
+  ])];
+  const check = row(compareTimelines({ reference: {}, gui, gameFps: 24, mode: 'competition' }), 'start.noMovementDuringReady');
+  assert.equal(check.status, 'not applicable');
+});

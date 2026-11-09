@@ -60,37 +60,41 @@ export function movementDuringReady({ events }) {
 }
 
 /** One row per measurement: pass, fail, did not complete, not implemented, or no reference. */
-export function compareTimelines({ reference, gui, gameFps }) {
+export function compareTimelines({ reference, gui, gameFps, mode = 'arcade' }) {
   const ours = Object.assign({}, ...gui.map(reduceTimeline));
 
   // [key, tolerance kind, unit, event types that measure it]
   const measurements = [
-    ...GAPS.map((gap) => [gap.key, gap.tolerance, 's', [gap.from.type, gap.to.type]]),
-    ...COUNTS.map((count) => [count.key, 'count', 'count', [count.type]]),
+    ...GAPS.map((gap) => [gap.key, gap.tolerance, 's', [gap.from.type, gap.to.type], gap.category]),
+    ...COUNTS.map((count) => [count.key, 'count', 'count', [count.type], count.category]),
   ];
   const sirenKeys = [...new Set([...Object.keys(reference), ...Object.keys(ours)])]
     .filter((key) => key.startsWith('siren.step')).sort();
   for (const key of sirenKeys) {
     const isCount = key.endsWith('.pelletsRemaining');
-    measurements.push([key, isCount ? 'count' : 'audio', isCount ? 'count' : 's', [SIREN.type]]);
+    measurements.push([key, isCount ? 'count' : 'audio', isCount ? 'count' : 's', [SIREN.type], SIREN.category]);
   }
 
-  const rows = measurements.map(([key, kind, unit, types]) => {
+  const rows = measurements.map(([key, kind, unit, types, category]) => {
     const arcade = reference[key]?.value;
     const measured = ours[key]?.value;
     const tolerance = toleranceFor(kind, gameFps);
+    // In competition mode the game is never held, so pauses must be zero
+    const target = mode === 'competition' && category === 'pause' ? 0 : arcade;
     let status;
-    if (arcade === undefined) status = 'no reference';
+    if (category === 'server') status = 'info';
+    else if (target === undefined) status = 'no reference';
     else if (types.some((type) => GUI_NOT_IMPLEMENTED.has(type))) status = 'not implemented';
     else if (measured === undefined) status = 'did not complete';
-    else status = Math.abs(measured - arcade) <= tolerance + 1e-9 ? 'pass' : 'fail';
-    return { key, status, arcade, ours: measured, tolerance, unit };
+    else status = Math.abs(measured - target) <= tolerance + 1e-9 ? 'pass' : 'fail';
+    return { key, category, status, arcade, target, ours: measured, tolerance, unit };
   });
 
   const start = gui.find(({ scenario }) => scenario === 'start');
   if (start?.events.some((event) => event.type === 'readyShown')) {
     const moved = movementDuringReady(start);
-    rows.push({ key: 'start.noMovementDuringReady', status: moved.length ? 'fail' : 'pass', moved, tolerance: 0, unit: 'count' });
+    const status = mode === 'competition' ? 'not applicable' : moved.length ? 'fail' : 'pass';
+    rows.push({ key: 'start.noMovementDuringReady', category: 'pause', status, moved, tolerance: 0, unit: 'count' });
   }
   return rows;
 }
@@ -101,12 +105,13 @@ const formatValue = (value, unit) =>
 /** Human-readable report, one line per row. */
 export function formatReport(rows) {
   return rows.map((row) => {
-    const status = row.status.toUpperCase();
+    const status = row.status === 'info' ? 'INFO (game rule)' : row.status.toUpperCase();
     if (row.key === 'start.noMovementDuringReady') {
       const detail = row.moved.length ? `moved: ${row.moved.join(', ')}` : 'nothing moved';
       return `${row.key.padEnd(36)} ${detail}  ${status}`;
     }
-    return `${row.key.padEnd(36)} arcade ${formatValue(row.arcade, row.unit).padEnd(7)}` +
+    const target = row.target !== undefined && row.target !== row.arcade ? `  target ${formatValue(row.target, row.unit)}` : '';
+    return `${row.key.padEnd(36)} arcade ${formatValue(row.arcade, row.unit).padEnd(7)}${target}` +
       `  ours ${formatValue(row.ours, row.unit).padEnd(7)}` +
       `  tol ${formatValue(row.tolerance, row.unit)}  ${status}`;
   }).join('\n');
