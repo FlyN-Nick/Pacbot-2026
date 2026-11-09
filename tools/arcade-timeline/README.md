@@ -1,0 +1,34 @@
+# Arcade timeline comparison
+
+Measures how closely the web visualizer's timing (READY, death, fright, level complete, siren) matches the original Pac-Man arcade. Both sides record the same events; the report compares the gaps between them against `reference/arcade-timings.json`.
+
+## Setup
+
+```sh
+npm install
+```
+
+The comparison drives your installed Google Chrome in headless mode. Without Chrome, install Playwright's Chromium instead: `npx playwright install chromium`.
+
+Recording the arcade side also needs MAME (`brew install mame`) and the `pacman` (Midway) ROM set as `pacman.zip` in a folder **outside this repository**. ROM files must never be committed.
+
+## Commands
+
+```sh
+npm run compare                                  # our visualizer vs. the committed reference
+npm run compare -- --dump gui-timeline.json      # also save our raw timelines
+PACMAN_ROM_DIR=~/roms npm run record             # record the arcade in MAME
+PACMAN_ROM_DIR=~/roms npm run record -- --write-reference   # ...and update the reference
+npm test                                         # unit tests (no browser or ROM needed)
+```
+
+`compare` starts its own game server and visualizer on free ports, so it can run next to a server you already have open.
+
+## Reading the report
+
+- `PASS` / `FAIL`: our value is within / outside the tolerance (one arcade frame for animation, 50 ms for audio, one server frame for game-tick timing, exact for counts).
+- `DID NOT COMPLETE`: the measurement started but its ending event never came.
+- `NOT IMPLEMENTED`: the visualizer has no such event yet (for example the siren).
+- `NO REFERENCE`: the arcade value is missing; see the notes at the top of `mame/memory-map.lua`.
+
+The arcade memory addresses the recorder relies on, and how each was verified, are documented in `mame/memory-map.lua`.
