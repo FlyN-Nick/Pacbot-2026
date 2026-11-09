@@ -1,5 +1,6 @@
 {
   "ServerIP": "localhost",
+  "TcpPort": 3004,
   "WebSocketPort": 3002,
   "BotIP": "localhost",
   "BotSocketPort": 3003, 

@@ -2,6 +2,8 @@
 
 This is the software used at competition for Columbia University Robotics Club's PacBot.
 
+It is a fork of the official competition software, [Pacbot-Competition/Pacbot-2](https://github.com/Pacbot-Competition/Pacbot-2); questions about the game itself can go to its author at ih2422@princeton.edu.
+
 Clone the repo, then run the one-time setup from the repository root (on Windows, use Git Bash):
 
 ```sh
@@ -17,6 +19,7 @@ sh scripts/setup.sh
 | [`server/`](server/) | Competition game server, game engine, and WebSocket/TCP communication | Go |
 | [`bot_client/`](bot_client/) | Pacbot client and high-level decision algorithms | Python |
 | [`web_client/`](web_client/) | Browser visualizer and console for the competition game | Svelte, Vite |
+| [`cv_client/`](cv_client/) | Sample computer-vision client that tracks the robot with a camera and reports its position to the server, with a tutorial notebook | Python, OpenCV |
 | [`low_level/`](low_level/) | Microcontroller firmware and robot communication/driving documentation | Arduino/C++ |
 | [`dashboard/`](dashboard/) | Physical robot telemetry and control dashboard, with its own server and web app | Go, React, Vite |
 
