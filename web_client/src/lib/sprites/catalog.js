@@ -16,3 +16,10 @@ for(const [color,offset] of [['white',0],['red',32],['pink',64],['cyan',96],['or
 add('life',0,0,16,16,'life.png',16,16);
 
 add('glyph-yellow-!',0,0,8,8,'punctuation.png',8,8);
+
+// Keep source rectangles for provenance; runtime frames have transparent gutters.
+export const RENDER_ATLAS_WIDTH=320;
+export const RENDER_ATLAS_HEIGHT=Math.ceil(Object.keys(catalog).length/16)*20;
+Object.values(catalog).forEach((frame,index)=>{
+ frame.render={asset:'atlas.png',x:(index%16)*20+2,y:Math.floor(index/16)*20+2,sheetWidth:RENDER_ATLAS_WIDTH,sheetHeight:RENDER_ATLAS_HEIGHT};
+});

@@ -18,3 +18,5 @@ Death timing evidence: MAME death captures phases 1..12 occurred at emulated fra
 punctuation.png contains the yellow exclamation glyph at (509,205,8,8) from All Assets_Palettes.png, preserving every pixel. It matches the MAME READY! glyph. Fruit history places the oldest visible icon on the right, as shown in the supplied HUD sheet.
 
 All four runtime sprite/glyph PNGs use transparent sheet backgrounds, so the colored avoidance map remains visible around the artwork. Native pixel comparisons composite the sprites on black, as the arcade does.
+
+Runtime rendering uses atlas.png, generated from the documented source rectangles. Every frame has a two-pixel transparent gutter in a 20 × 20 slot, preventing fractional-size background sampling from reaching adjacent artwork. Source RGB and alpha values inside each frame are copied unchanged. Run the extraction script after changing catalog entries.

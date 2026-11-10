@@ -10,3 +10,13 @@ test('sprite and glyph sheets have transparent black backgrounds and opaque colo
  assert.ok(transparent>0&&foreground>0);
  }
 });
+
+test('rendered frames have transparent gutters so scaling cannot sample neighboring art',()=>{
+ const images=new Map();
+ for(const [name,frame]of Object.entries(catalog)){
+ const render=frame.render??frame;
+ if(!images.has(render.asset))images.set(render.asset,PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/'+render.asset,import.meta.url))));
+ const image=images.get(render.asset);
+ for(let y=-2;y<frame.height+2;y++)for(let x=-2;x<frame.width+2;x++)if(x<0||y<0||x>=frame.width||y>=frame.height){const px=render.x+x,py=render.y+y;if(px>=0&&py>=0&&px<image.width&&py<image.height)assert.equal(image.data[(py*image.width+px)*4+3],0,`${name} samples adjacent artwork`);}
+ }
+});

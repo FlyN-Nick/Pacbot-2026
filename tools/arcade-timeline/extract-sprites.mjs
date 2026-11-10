@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {PNG} from 'pngjs';
+import {catalog,RENDER_ATLAS_WIDTH,RENDER_ATLAS_HEIGHT} from '../../web_client/src/lib/sprites/catalog.js';
 import {normalizeCapture} from './visual-captures.mjs';
 const input=process.argv[2]??path.join(os.homedir(),'Downloads/sprites');
 const out=fileURLToPath(new URL('../../web_client/public/sprites',import.meta.url));
@@ -28,3 +29,15 @@ fs.writeFileSync(path.join(out,'life.png'),PNG.sync.write(transparentBackground(
 const palettes=PNG.sync.read(fs.readFileSync(path.join(input,'Arcade - Pac-Man - Miscellaneous - All Assets_Palettes.png')));
 const punctuation=normalizeCapture(palettes,{crop:{x:509,y:205,width:8,height:8}});
 fs.writeFileSync(path.join(out,'punctuation.png'),PNG.sync.write(transparentBackground(punctuation)));
+
+const atlas=new PNG({width:RENDER_ATLAS_WIDTH,height:RENDER_ATLAS_HEIGHT});
+const sources=new Map();
+for(const frame of Object.values(catalog)){
+ if(!sources.has(frame.asset))sources.set(frame.asset,PNG.sync.read(fs.readFileSync(path.join(out,frame.asset))));
+ const source=sources.get(frame.asset);
+ for(let y=0;y<frame.height;y++){
+  const start=((frame.y+y)*source.width+frame.x)*4;
+  source.data.copy(atlas.data,((frame.render.y+y)*atlas.width+frame.render.x)*4,start,start+frame.width*4);
+ }
+}
+fs.writeFileSync(path.join(out,'atlas.png'),PNG.sync.write(atlas));
