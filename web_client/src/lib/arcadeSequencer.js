@@ -110,6 +110,14 @@ export function planSequence({ kind, mode, timings, lastLife = false, serverPaus
 }
 
 /**
+ * The level sequence plays over the server's own pause. If play resumes while it
+ * runs and this page didn't resume it (another client did), the sequence is stale.
+ */
+export function resumedElsewhere({ runningKind, wasPaused, nowRunning }) {
+  return runningKind === 'levelComplete' && Boolean(wasPaused) && Boolean(nowRunning);
+}
+
+/**
  * Runs one plan at a time. Steps due at the same time run together, in plan
  * order. Holds and resumes are skipped if the mode is competition when they come due.
  */

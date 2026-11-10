@@ -53,7 +53,7 @@
   import ModeToggle from './lib/ModeToggle.svelte';
   import { WALLS } from './lib/maze.js';
   import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
-  import { planSequence, createSequenceRunner } from './lib/arcadeSequencer.js';
+  import { planSequence, createSequenceRunner, resumedElsewhere } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
   import { createEyesSound } from './lib/eyesSound.js';
   import { soundForState } from './lib/ghostEyes.js';
@@ -192,11 +192,17 @@
     displayFrozen = false;
     frozenFrame = null;
     ghostsHidden = false;
+    clearLevelDisplay();
+    clearGhostEaten();
+  }
+
+  function clearLevelDisplay() {
     mazeFlashing = false;
     mazeBlank = false;
     allActorsHidden = false;
     levelFrozen = false;
-    clearGhostEaten();
+    displayFrozen = false;
+    frozenFrame = null;
   }
 
   // Stop the ghost-eaten freeze display and every eyes journey
@@ -215,6 +221,8 @@
   }
 
   function runSequence(kind, { lastLife = false, serverPauses = false, ghosts = [] } = {}) {
+    // A replaced level sequence must not leave its display behind
+    if (currentKind() === 'levelComplete') clearLevelDisplay();
     runningKind = kind;
     runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts }));
   }
@@ -391,6 +399,15 @@
 
   function routeFrame(frame) {
     if (isGameReset(latestFrame, frame)) clearGameEffects();
+    // Another client resumed play during the level sequence: show the live board
+    if (resumedElsewhere({
+      runningKind: currentKind(),
+      wasPaused: latestFrame?.mode === Modes.Paused,
+      nowRunning: frame.mode === Modes.Scatter || frame.mode === Modes.Chase,
+    })) {
+      runner.cancel();
+      clearSequenceDisplay();
+    }
     const currentActive = getFrameActivity(frame, socketOpen).active;
     if (!currentActive) lastPacmanMovementTick = -Infinity;
     else if (pacmanActive && hasPacmanMoved(latestFrame, frame)) lastPacmanMovementTick = frame.tick;

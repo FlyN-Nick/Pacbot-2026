@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planSequence, createSequenceRunner } from './arcadeSequencer.js';
+import { planSequence, createSequenceRunner, resumedElsewhere } from './arcadeSequencer.js';
 
 const T = { readyHoldMs: 4207, deathFreezeMs: 990, deathAnimationMs: 2640, deathFrames: 12, deathEndToReadyMs: 132, deathReadyMs: 2000 };
 const plan = (kind, mode, lastLife = false) => planSequence({ kind, mode, timings: T, lastLife });
@@ -218,4 +218,13 @@ test('a switch to competition during the level sequence skips the resume', () =>
   clock.advance(10000);
   assert.ok(!done.includes('resume'));
   assert.ok(done.includes('showReady'));
+});
+
+test('a level sequence is abandoned when play resumes from somewhere else', () => {
+  assert.equal(resumedElsewhere({ runningKind: 'levelComplete', wasPaused: true, nowRunning: true }), true);
+  // Still paused, or never paused (the moments before the server's own pause), or another sequence
+  assert.equal(resumedElsewhere({ runningKind: 'levelComplete', wasPaused: true, nowRunning: false }), false);
+  assert.equal(resumedElsewhere({ runningKind: 'levelComplete', wasPaused: false, nowRunning: true }), false);
+  assert.equal(resumedElsewhere({ runningKind: 'death', wasPaused: true, nowRunning: true }), false);
+  assert.equal(resumedElsewhere({ runningKind: null, wasPaused: true, nowRunning: true }), false);
 });
