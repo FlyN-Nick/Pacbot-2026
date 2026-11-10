@@ -4,19 +4,25 @@ import { createEyesSound } from './eyesSound.js';
 
 function fakeAudio() {
   const oscillators = [];
+  const gains = [];
   const param = () => ({ calls: [], setValueAtTime(v, t) { this.calls.push(['set', v, t]); },
     linearRampToValueAtTime(v, t) { this.calls.push(['ramp', v, t]); }, cancelScheduledValues() { this.calls = []; } });
   const context = {
     currentTime: 0,
     createOscillator() {
       const osc = { type: '', frequency: param(), stopped: false,
-        connect() {}, disconnect() {}, start() {}, stop() { this.stopped = true; } };
+        connect() {}, disconnect() {}, start() {}, stop(when) { this.stopped = true; this.stopAt = when; } };
       oscillators.push(osc);
       return osc;
     },
-    createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; },
+    createGain() {
+      const gain = { gain: { value: 1, ramps: [], setValueAtTime(v, t) { this.ramps.push(['set', v, t]); },
+        linearRampToValueAtTime(v, t) { this.ramps.push(['ramp', v, t]); } }, connect() {}, disconnect() {} };
+      gains.push(gain);
+      return gain;
+    },
   };
-  return { context, oscillators, destination: {} };
+  return { context, oscillators, gains, destination: {} };
 }
 
 test('without audio the eyes sound does nothing and does not throw', () => {
@@ -41,4 +47,16 @@ test('the eyes sound falls in pitch once per period, like the arcade', () => {
   sound.stop();
   assert.equal(audio.oscillators[0].stopped, true);
   assert.equal(sound.playing, false);
+});
+
+test('stopping the eyes sound fades it out instead of cutting it', () => {
+  const audio = fakeAudio();
+  audio.context.currentTime = 2;
+  const sound = createEyesSound({ getAudio: () => audio, periodMs: 264 });
+  sound.start();
+  sound.stop();
+  const osc = audio.oscillators[0];
+  assert.ok(osc.stopAt > 2 && osc.stopAt <= 2.03, `stops at ${osc.stopAt}`);
+  const fade = audio.gains[0].gain.ramps.find(([kind, value]) => kind === 'ramp' && value === 0);
+  assert.ok(fade && Math.abs(fade[2] - osc.stopAt) < 1e-9, 'gain fades to zero as it stops');
 });

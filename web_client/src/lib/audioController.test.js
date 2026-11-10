@@ -14,13 +14,15 @@ function fixture({ failedFetch = false, failedDecode = false } = {}) {
     async resume() { this.resumeCount++; this.state = 'running'; },
     async close() { this.state = 'closed'; },
     createGain() {
-      const gain = { gain: { value: 1 }, connect() {} };
+      const gain = { gain: { value: 1, ramps: [],
+        setValueAtTime(v, t) { this.ramps.push(['set', v, t]); },
+        linearRampToValueAtTime(v, t) { this.ramps.push(['ramp', v, t]); } }, connect() {} };
       gains.push(gain);
       return gain;
     },
     createBufferSource() {
       const source = { loop: false, started: false, stopped: false, connect() {},
-        start() { this.started = true; }, stop() { this.stopped = true; this.onended?.(); } };
+        start() { this.started = true; }, stop(when) { this.stopped = true; this.stopAt = when; this.onended?.(); } };
       sources.push(source);
       return source;
     },
@@ -187,18 +189,38 @@ test('death reserves priority while its WAV is loading', async () => {
   assert.equal(f.sources[0].started, true);
 });
 
-test('rapid pellet events are rate limited while later chomps play', async () => {
+test('pellets eaten in a row keep one chomp going instead of cutting it off', async () => {
   const f = fixture();
   const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
   controller.setEnabled(true);
   await controller.unlock();
   await controller.play('chomp');
-  f.context.currentTime = 0.03;
-  await controller.play('chomp');
+  for (const time of [0.12, 0.25, 0.37]) {
+    f.context.currentTime = time;
+    await controller.play('chomp');
+  }
   assert.equal(f.sources.length, 1);
-  f.context.currentTime = 0.11;
+  assert.equal(f.sources[0].stopped, false);
+  // Once it has finished, the next pellet starts a new chomp
+  f.sources[0].onended();
+  f.context.currentTime = 0.8;
   await controller.play('chomp');
   assert.equal(f.sources.length, 2);
+});
+
+test('stopping a sound fades it out instead of cutting it, so it does not click', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  f.context.currentTime = 1;
+  await controller.play('death');
+  controller.stop('death');
+  const source = f.sources[0];
+  assert.ok(source.stopAt > 1 && source.stopAt <= 1.03, `stops at ${source.stopAt}`);
+  const fade = f.gains.flatMap((g) => g.gain.ramps).find(([kind, value]) => kind === 'ramp' && value === 0);
+  assert.ok(fade, 'gain ramps to zero');
+  assert.ok(Math.abs(fade[2] - source.stopAt) < 1e-9, 'the fade ends as the sound stops');
 });
 
 test('onCueStarted reports each cue as its sound starts', async () => {

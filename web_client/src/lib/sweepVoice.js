@@ -3,6 +3,7 @@
 
 const LOOKAHEAD_SECONDS = 2;
 const REFRESH_MS = 1000;
+const FADE_SECONDS = 0.015;
 
 /**
  * shape 'riseFall': low → high over half a period, back to low over the other half.
@@ -59,11 +60,19 @@ export function createSweepVoice({ getAudio, gain = 0.25, setRefresh = setInterv
 
   function stop() {
     if (!voice) return;
-    const { oscillator, gainNode, refresh } = voice;
+    const { context, oscillator, gainNode, refresh } = voice;
     voice = null;
     clearRefresh(refresh);
-    try { oscillator.stop(); } catch { /* Already stopped. */ }
-    try { oscillator.disconnect(); gainNode.disconnect(); } catch { /* Already disconnected. */ }
+    // Fade out rather than cut mid-wave, which clicks
+    const at = context.currentTime + FADE_SECONDS;
+    try {
+      gainNode.gain.setValueAtTime?.(gainNode.gain.value, at - FADE_SECONDS);
+      gainNode.gain.linearRampToValueAtTime?.(0, at);
+      oscillator.stop(at);
+    } catch { /* Already stopped. */ }
+    oscillator.onended = () => {
+      try { oscillator.disconnect(); gainNode.disconnect(); } catch { /* Already disconnected. */ }
+    };
   }
 
   function setSweep(next) {

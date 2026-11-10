@@ -22,10 +22,13 @@ export function sirenShouldPlay({ active, paused, frightened, eyes, dying, ready
   return Boolean(active) && !paused && !frightened && !eyes && !dying && !ready;
 }
 
+// A triangle wave at this gain matches the background loudness group (-20 dBFS RMS, audioController.js)
+export const SIREN_GAIN = 0.173;
+
 /** getAudio() returns { context, destination } or null while audio is unavailable. */
 export function createSiren({ getAudio, setRefresh, clearRefresh }) {
   let step = 1;
-  const voice = createSweepVoice({ getAudio, gain: 0.25, setRefresh, clearRefresh });
+  const voice = createSweepVoice({ getAudio, gain: SIREN_GAIN, setRefresh, clearRefresh });
   const sweepFor = (n) => {
     const { periodSeconds, low, high } = SIREN_STEPS[n - 1];
     return { periodSeconds, low, high, shape: 'riseFall' };

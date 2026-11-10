@@ -10,6 +10,34 @@ const FILES = Object.freeze({
 });
 const PRIORITY = { intro: 1, death: 3 };
 
+export const CUE_FILES = FILES;
+
+// Loudness groups, in dBFS RMS: jingles and event sounds stand out, the chomp a little
+// less, and background loops (fright, siren, eyes) sit underneath.
+const EVENT_DB = -14;
+const CHOMP_DB = -16;
+const BACKGROUND_DB = -20;
+export const LOUDNESS_TARGET_DB = Object.freeze({
+  intro: EVENT_DB, death: EVENT_DB, fruit: EVENT_DB, ghost: EVENT_DB, extraLife: EVENT_DB,
+  chomp: CHOMP_DB,
+  frightened: BACKGROUND_DB, frightenedFirstLoop: BACKGROUND_DB,
+});
+
+// Per-cue gain bringing each file to its group's loudness (file RMS measured by audioBalance.test.js)
+export const CUE_GAIN = Object.freeze({
+  intro: 0.653,              // file -10.3 dB
+  death: 0.668,              // -10.5 dB
+  fruit: 0.484,              // -7.7 dB
+  ghost: 0.490,              // -7.8 dB
+  extraLife: 0.624,          // -9.9 dB
+  chomp: 0.841,              // -14.5 dB
+  frightened: 1.175,         // -21.4 dB
+  frightenedFirstLoop: 1.216, // -21.7 dB
+});
+
+// Stopping fades out over this long, so a sound cut mid-wave doesn't click
+const FADE_SECONDS = 0.015;
+
 /** Browser audio stays silent until both enabled and unlocked by a user gesture. */
 export function createAudioController({
   contextFactory = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(),
@@ -24,7 +52,6 @@ export function createAudioController({
   let unlocked = false;
   let destroyed = false;
   let volume = 0.5;
-  let lastChompTime = -Infinity;
   let generation = 0;
   const buffers = new Map();
   const active = new Map();
@@ -58,6 +85,23 @@ export function createAudioController({
       unlocked = false;
     }
     return unlocked;
+  }
+
+  // A buffer source through its own gain node; stopping it fades out instead of cutting
+  function createVoice(buffer, gainName) {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    gain.gain.value = CUE_GAIN[gainName] ?? 1;
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(master);
+    const fadeStop = () => {
+      const now = context.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + FADE_SECONDS);
+      source.stop(now + FADE_SECONDS);
+    };
+    return { source, fadeStop };
   }
 
   function stop(name) {
@@ -122,15 +166,14 @@ export function createAudioController({
       stopVersion !== (stopVersions.get('frightened') || 0) || context?.state !== 'running') return;
 
     try {
-      let source;
-      const entry = { loop, stop: () => source?.stop() };
+      let voice;
+      const entry = { loop, stop: () => voice?.fadeStop() };
       active.set('frightened', entry);
       const playBuffer = (buffer, shouldLoop) => {
         if (active.get('frightened') !== entry) return;
-        source = context.createBufferSource();
-        source.buffer = buffer;
+        voice = createVoice(buffer, buffer === loopBuffer ? 'frightened' : 'frightenedFirstLoop');
+        const { source } = voice;
         source.loop = shouldLoop;
-        source.connect(master);
         source.onended = () => {
           if (active.get('frightened') !== entry) return;
           if (shouldLoop) active.delete('frightened');
@@ -149,7 +192,8 @@ export function createAudioController({
   async function play(name, { loop = false } = {}) {
     if (!enabled || !unlocked || destroyed || context?.state !== 'running') return;
     if (name !== 'frightened' && !Object.hasOwn(FILES, name)) return;
-    if (name === 'chomp' && !loop && context.currentTime - lastChompTime < 0.09) return;
+    // Pellets eaten in a row keep the running chomp going: restarting it mid-wave clicks
+    if (name === 'chomp' && !loop && active.has('chomp')) return;
     const cuePriority = PRIORITY[name] || 0;
     if ([...active.keys(), ...pendingPriority.keys()].some((activeName) =>
       (PRIORITY[activeName] || 0) > cuePriority)) return;
@@ -173,11 +217,9 @@ export function createAudioController({
     if (loop && active.has(name)) return;
     stop(name);
     try {
-      const source = context.createBufferSource();
-      source.buffer = buffer;
+      const { source, fadeStop } = createVoice(buffer, name);
       source.loop = loop;
-      source.connect(master);
-      const entry = { loop, stop: () => source.stop() };
+      const entry = { loop, stop: fadeStop };
       active.set(name, entry);
       source.onended = () => {
         if (active.get(name) === entry) active.delete(name);
@@ -185,7 +227,6 @@ export function createAudioController({
       };
       source.start();
       onCueStarted({ name, duration: buffer.duration });
-      if (name === 'chomp' && !loop) lastChompTime = context.currentTime;
     } catch {
       active.delete(name);
     }
