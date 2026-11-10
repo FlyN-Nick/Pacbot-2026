@@ -56,7 +56,8 @@
   import { planSequence, createSequenceRunner } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
   import { createEyesSound } from './lib/eyesSound.js';
-  import { planEyesPath, eyesPositionAt, soundForState } from './lib/ghostEyes.js';
+  import { soundForState } from './lib/ghostEyes.js';
+  import { mergeEatenGhosts, addEyes, advanceEyes } from './lib/ghostEatenState.js';
   import Eyes from './lib/agents/Eyes.svelte';
 
   // Arcade (demo) mode only with ?mode=arcade in the URL; otherwise competition
@@ -104,7 +105,9 @@
   let hiddenGhosts = new Set();
   let pacmanHidden = false;
   let scoresVisible = [];
-  let eyes = []; // [{ ghostIndex, path, elapsedMs }]
+  let eyes = []; // [{ id, ghostIndex, path, elapsedMs }]
+  let nextEyesId = 1;
+  let freezeGhosts = []; // ghosts covered by the running ghost-eaten plan
   let eyesPositions = [];
   let eyesAnimation = null;
   let eyesLastMs = 0;
@@ -190,6 +193,7 @@
     hiddenGhosts = new Set();
     pacmanHidden = false;
     scoresVisible = [];
+    freezeGhosts = [];
     eyes = [];
     eyesPositions = [];
     if (eyesAnimation !== null) cancelAnimationFrame(eyesAnimation);
@@ -211,7 +215,7 @@
   // Arcade mode: eyes follow the corridors home; the ghost reappears when they arrive
   function startEyes(ghosts) {
     if (eyes.length === 0) timeline.record('eyesSoundStarted');
-    eyes = [...eyes, ...ghosts.map(({ ghostIndex, row, col }) => ({ ghostIndex, path: planEyesPath({ row, col }), elapsedMs: 0 }))];
+    ({ eyes, nextId: nextEyesId } = addEyes(eyes, ghosts, nextEyesId));
     if (eyesAnimation === null) {
       eyesLastMs = performance.now();
       eyesAnimation = requestAnimationFrame(moveEyes);
@@ -222,26 +226,15 @@
   function moveEyes(now) {
     const dt = Math.max(0, now - eyesLastMs);
     eyesLastMs = now;
-    const rate = GUI_TIMINGS.eyesTilesPerSecond;
     // Travelling eyes wait while another ghost-eaten freeze holds everything
-    if (!pacmanHidden) for (const entry of eyes) entry.elapsedMs += dt;
-    const arrived = [];
-    eyesPositions = eyes.map((entry) => {
-      const at = eyesPositionAt(entry.path, entry.elapsedMs, rate);
-      if (at.done) arrived.push(entry);
-      const i = Math.min(Math.floor(entry.elapsedMs / 1000 * rate), entry.path.length - 1);
-      const next = entry.path[Math.min(i + 1, entry.path.length - 1)];
-      return { ghostIndex: entry.ghostIndex, row: at.row, col: at.col,
-        dirRow: Math.sign(next.row - entry.path[i].row), dirCol: Math.sign(next.col - entry.path[i].col) };
-    });
-    if (arrived.length) {
-      for (const entry of arrived) {
-        hiddenGhosts.delete(entry.ghostIndex);
-        timeline.record('eyesTravelled', { tiles: entry.path.length - 1, seconds: entry.elapsedMs / 1000 });
-      }
-      hiddenGhosts = new Set(hiddenGhosts);
-      eyes = eyes.filter((entry) => !arrived.includes(entry));
-      eyesPositions = eyesPositions.filter(({ ghostIndex }) => eyes.some((entry) => entry.ghostIndex === ghostIndex));
+    const step = advanceEyes(eyes, dt, GUI_TIMINGS.eyesTilesPerSecond, pacmanHidden);
+    eyes = step.eyes;
+    eyesPositions = step.positions;
+    for (const entry of step.arrived) {
+      timeline.record('eyesTravelled', { tiles: entry.path.length - 1, seconds: entry.elapsedMs / 1000 });
+    }
+    if (step.unhide.length) {
+      hiddenGhosts = new Set([...hiddenGhosts].filter((index) => !step.unhide.includes(index)));
     }
     if (eyes.length === 0) {
       eyesAnimation = null;
@@ -319,6 +312,7 @@
         break;
       case 'hideScore':
         scoresVisible = [];
+        freezeGhosts = [];
         break;
       case 'startEyes':
         startEyes(step.ghosts);
@@ -410,12 +404,15 @@
     const eaten = events.filter(({ type }) => type === 'ghostEaten');
     if (eaten.length) {
       timeline.anchor('ghostEaten');
-      const ghosts = eaten.map(({ ghostIndex, row, col, points }) => ({ ghostIndex, row, col, points }));
+      const newlyEaten = eaten.map(({ ghostIndex, row, col, points }) => ({ ghostIndex, row, col, points }));
+      // A ghost eaten during a running freeze joins it, so no ghost is left hidden
+      const ghosts = currentKind() === 'ghostEaten' ? mergeEatenGhosts(freezeGhosts, newlyEaten) : newlyEaten;
       const arcade = $visualizerMode === 'arcade';
       // A start or death sequence isn't interrupted (the server is paused then anyway)
       if (['start', 'startDetected', 'death'].includes(currentKind())) {
         audioController.play('ghost');
       } else {
+        freezeGhosts = ghosts;
         runSequence('ghostEaten', { ghosts });
       }
       if (!arcade) {
@@ -1239,7 +1236,7 @@
   {/if}
   {/if}
 
-  {#each eyesPositions as eye (eye.ghostIndex)}
+  {#each eyesPositions as eye (eye.id)}
     <Eyes {gridSize} row={eye.row} col={eye.col} dirRow={eye.dirRow} dirCol={eye.dirCol} />
   {/each}
   {/key}

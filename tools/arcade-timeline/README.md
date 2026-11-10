@@ -35,4 +35,6 @@ Each measurement has a category: **server** (game rules such as fright length, u
 - `NOT APPLICABLE`: the check doesn't exist in this mode (competition mode has no READY after a death and no READY movement check).
 - `NO REFERENCE`: the arcade value is missing; see the notes at the top of `mame/memory-map.lua`.
 
+The visualizer's end-of-pause events (`gameStarted`, `freezeEnded`) are recorded when it lets play continue, not observed from the server, so in competition mode those pause rows confirm only that the visualizer adds no hold. The guarantee that competition mode never pauses the server comes from the sequencer's unit tests.
+
 The arcade memory addresses the recorder relies on, and how each was verified, are documented in `mame/memory-map.lua`.
