@@ -51,7 +51,9 @@
   import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
   import ModeToggle from './lib/ModeToggle.svelte';
-  import { WALLS } from './lib/maze.js';
+  import { WALLS, MAZE_ROWS as ROWS, MAZE_COLS as COLS } from './lib/maze.js';
+  // A cleared board, shown while the level-complete sequence is frozen
+  const emptyPelletGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
   import { planSequence, createSequenceRunner, resumedElsewhere } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
@@ -972,8 +974,6 @@
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
 
-  // A cleared board, shown while the level-complete sequence is frozen
-  $: emptyPelletGrid = pelletGrid.map((row) => row.map(() => 0));
 
   // While a death is frozen, show everyone where Pac-Man was caught
   $: frozenPacman = displayFrozen ? frozenFrame?.pacman : null;

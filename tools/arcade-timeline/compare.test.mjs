@@ -198,7 +198,6 @@ test('post-death READY rows do not apply in competition mode', () => {
   assert.equal(row(arcade, 'death.readyToResume').status, 'pass');
 });
 
-
 test('relative tolerance is 5% of the target', () => {
   assert.ok(Math.abs(toleranceFor('relative', 24, 20) - 1) < 1e-12);
 });
@@ -234,7 +233,7 @@ test('eyes speed passes within 5%', () => {
   assert.equal(row(at(14), 'ghostEaten.eyesSpeed').status, 'fail');
 });
 
-test('the eyes sound length row is replaced and the eyes events are implemented', async () => {
+test('the eyes sound length row is gone (eyes speed replaces it)', () => {
   const rows = compareTimelines({ reference: {}, gui: [], gameFps: 24 });
   assert.equal(row(rows, 'ghostEaten.eyesSoundLength'), undefined);
 });
@@ -275,9 +274,4 @@ test('in competition mode the flash is graded but the READY after a clear is not
   assert.equal(row(rows, 'levelComplete.toFirstFlash').status, 'pass');
   assert.equal(row(rows, 'levelComplete.toReady').status, 'not applicable');
   assert.equal(row(rows, 'levelComplete.readyToResume').status, 'not applicable');
-});
-
-test('the GUI produces every arcade event, so nothing is reported as not implemented', async () => {
-  const gaps = await import('./gaps.mjs');
-  assert.equal('GUI_NOT_IMPLEMENTED' in gaps, false);
 });

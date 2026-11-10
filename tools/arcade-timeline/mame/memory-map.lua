@@ -49,6 +49,8 @@ return {
   ghostStates = { 0x4DAC, 0x4DAD, 0x4DAE, 0x4DAF },
   ghostStateEyes = 1,
   ghostsEaten = 0x4DD0, -- ghosts eaten this fright (0 -> 1 at 692)
+  -- The flag lasts 59 frames, but actors visibly move again after 57 (0.9405 s, ghostEaten.freeze),
+  -- which is what the comparison measures
   ghostEatenFreeze = 0x4DD1, -- 1 during the freeze after eating a ghost (692-751, 59 frames)
 
   -- Screen
