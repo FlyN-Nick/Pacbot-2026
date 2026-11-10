@@ -114,9 +114,12 @@ end
 local prev = {}
 local moving = {}
 local deathFrames, deathActive = 0, false
+-- Returning eyes: which ghost, its last tile, tiles travelled; eyes sound frequency samples
+local eyesGhost, eyesTile, eyesTiles = nil, nil, 0
+local eyesSamples = {}
 local flashes, mazeFlashes = 0, 0
--- fright: watch one full fright. ghostEaten: eat a ghost right after fright
--- starts (eating pauses the fright timer, so the runs are separate and
+-- fright: watch one full fright. ghostEaten: eat Blinky 3 s into the fright, once
+-- it has wandered off, so its eyes have a measurable journey home (eating pauses the fright timer, so the runs are separate and
 -- record.mjs merges them).
 local plantsPowerPellet = scenario == "fright" or scenario == "ghostEaten"
 
@@ -197,8 +200,35 @@ subscription = emu.add_machine_frame_notifier(function()
   local popup = anySprite(map.colorScorePopup)
   if popup and not prev.popup then emit("scorePopupShown") end
   local eyes = (read(map.channel2Flags) & map.eyesSoundBit) ~= 0
-  if eyes and not prev.eyes then emit("eyesSoundStarted") end
-  if not eyes and prev.eyes then emit("eyesSoundEnded") end
+  if eyes and not prev.eyes then
+    emit("eyesSoundStarted")
+    eyesSamples = {}
+  end
+  if eyes then eyesSamples[#eyesSamples + 1] = voice2Frequency() end
+  if not eyes and prev.eyes then emit("eyesSoundEnded", { periodSeconds = loopPeriodSeconds(eyesSamples) }) end
+
+  -- The eaten ghost's journey home, in tiles (8 pixels each)
+  local function ghostTile(i)
+    local actor = map.actorPositions[i]
+    return (read(actor.y) // 8) * 32 + read(actor.x) // 8
+  end
+  if not eyesGhost and not seen("eyesStarted") then
+    for i, address in ipairs(map.ghostStates) do
+      if read(address) == map.ghostStateEyes then
+        eyesGhost, eyesTile, eyesTiles = i, ghostTile(i), 0
+        emit("eyesStarted")
+        break
+      end
+    end
+  elseif eyesGhost then
+    if read(map.ghostStates[eyesGhost]) == map.ghostStateEyes then
+      local tile = ghostTile(eyesGhost)
+      if tile ~= eyesTile then eyesTiles, eyesTile = eyesTiles + 1, tile end
+    else
+      emit("eyesArrived", { tiles = eyesTiles })
+      eyesGhost = nil
+    end
+  end
 
   -- Level complete
   if playing and sub == 12 and prev.sub ~= 12 then
@@ -230,12 +260,15 @@ subscription = emu.add_machine_frame_notifier(function()
     if eaten < 236 then mem:write_u8(map.pelletsEaten, math.min(236, eaten + 6)) end
   end
   local fright = scenario == "ghostEaten" and seen("frightStarted")
-  if fright and frame >= fright + 4 and frame <= fright + 8 and not seen("ghostEaten") then
-    -- Put Blinky on Pac-Man so the frightened ghost is eaten
-    mem:write_u8(map.actorPositions[1].y, read(map.actorPositions[5].y))
-    mem:write_u8(map.actorPositions[1].x, read(map.actorPositions[5].x))
-    mem:write_u8(map.blinkyTile.y, read(map.pacmanTile.y))
-    mem:write_u8(map.blinkyTile.x, read(map.pacmanTile.x))
+  if fright and frame >= fright + 180 and frame <= fright + 184 and not seen("ghostEaten") then
+    -- Put Pac-Man on Blinky so the frightened ghost is eaten. Moving Blinky
+    -- instead left its eyes circling forever, never reaching the house.
+    mem:write_u8(map.actorPositions[5].y, read(map.actorPositions[1].y))
+    mem:write_u8(map.actorPositions[5].x, read(map.actorPositions[1].x))
+    mem:write_u8(map.pacmanTile.y, read(map.blinkyTile.y))
+    mem:write_u8(map.pacmanTile.x, read(map.blinkyTile.x))
+    -- The teleport isn't movement: keep it out of the actorMoved detection
+    prev.pacman = read(map.actorPositions[5].y) * 256 + read(map.actorPositions[5].x)
   end
 
   prev.ready, prev.music, prev.sub, prev.death = ready, music, sub, death

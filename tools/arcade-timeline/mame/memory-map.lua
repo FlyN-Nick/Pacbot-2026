@@ -44,6 +44,10 @@ return {
   spriteColors = { 0x4FF1, 0x4FF3, 0x4FF5, 0x4FF7, 0x4FF9, 0x4FFB, 0x4FFD, 0x4FFF },
   colorFrightFlash = 0x12,
   colorScorePopup = 0x18,
+  -- Per-ghost state (blinky, pinky, inky, clyde): 0 normal, 1 eyes returning, 2 entering the house.
+  -- Blinky eaten 3 s into fright: 0 -> 1 when the freeze ends (923), 1 -> 2 at the house door (1004), then 0 (1018)
+  ghostStates = { 0x4DAC, 0x4DAD, 0x4DAE, 0x4DAF },
+  ghostStateEyes = 1,
   ghostsEaten = 0x4DD0, -- ghosts eaten this fright (0 -> 1 at 692)
   ghostEatenFreeze = 0x4DD1, -- 1 during the freeze after eating a ghost (692-751, 59 frames)
 

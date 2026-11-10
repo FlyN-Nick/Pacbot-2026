@@ -54,13 +54,15 @@ test('the fright and ghost-eating runs merge into one ghostEaten timeline', () =
     { t: 0.02, type: 'scorePopupShown' },
     { t: 0.98, type: 'actorMoved', actor: 'pacman' },
     { t: 0.98, type: 'eyesSoundStarted' },
+    { t: 0.98, type: 'eyesStarted' },
+    { t: 2.3, type: 'eyesArrived', tiles: 19 },
     { t: 3, type: 'eyesSoundEnded' },
   ] };
   const merged = mergeGhostEaten(fright, eat);
   assert.equal(merged.scenario, 'ghostEaten');
   assert.deepEqual(merged.events.map((e) => e.type), [
     'frightStarted', 'frightFlashStart', 'frightEnded',
-    'ghostEaten', 'scorePopupShown', 'actorMoved', 'eyesSoundStarted', 'eyesSoundEnded',
+    'ghostEaten', 'scorePopupShown', 'actorMoved', 'eyesSoundStarted', 'eyesStarted', 'eyesArrived', 'eyesSoundEnded',
   ]);
   const ghostEaten = merged.events.find((e) => e.type === 'ghostEaten');
   assert.ok(ghostEaten.t > 5.92);
