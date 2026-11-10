@@ -134,3 +134,10 @@ test('flash numbering restarts with each fright', () => {
   assert.deepEqual(tracker.update(frame({ fright: 10, tick: 18 }), 12),
     [{ type: 'frightFlashStart', data: { flash: 1 } }]);
 });
+
+test('capture clock excludes scheduled future death frames until they are painted',()=>{
+ let now=1000;const timeline=createTimeline({enabled:true,now:()=>now});timeline.anchor('pacmanCaught');timeline.record('deathFrame',{frame:12},{atMs:3640});now=1500;
+ assert.equal(timeline.elapsed(),0.5);timeline.reset();assert.equal(timeline.elapsed(),null);
+});
+
+test('measured death frame offsets are preserved for capture alignment',()=>{assert.deepEqual(deathFrameOffsetsMs({deathFrames:3,deathAnimationMs:1000,deathFrameOffsetsMs:[0,495,610.5]}),[0,495,610.5]);});

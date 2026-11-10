@@ -1,4 +1,5 @@
 <script>
+  import Sprite from "../sprites/Sprite.svelte";
   export let gridSize;
   export let fruits = {};
 
@@ -18,7 +19,7 @@
   {#each entries as [type, icon, label]}
     {#if fruits[type]}
       <div class="fruit-entry" title={`${label}: ${fruits[type]}`} aria-label={`${label}: ${fruits[type]}`}>
-        <span aria-hidden="true">{icon}</span><b>{fruits[type]}</b>
+        <Sprite frame={`fruit-${type}`} scale={gridSize/16}/><b>{fruits[type]}</b>
       </div>
     {/if}
   {/each}
@@ -48,6 +49,5 @@
     justify-content: center;
     gap: calc(0.08 * var(--grid-size));
   }
-  .fruit-entry span { font-size: calc(0.65 * var(--grid-size)); }
   .fruit-entry b { font-size: calc(0.45 * var(--grid-size)); }
 </style>

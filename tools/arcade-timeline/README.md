@@ -37,3 +37,32 @@ Each measurement has a category: **server** (game rules such as fright length, u
 The visualizer's end-of-pause events (`gameStarted`, `freezeEnded`) are recorded when it lets play continue, not observed from the server, so in competition mode those pause rows confirm only that the visualizer adds no hold. The guarantee that competition mode never pauses the server comes from the sequencer's unit tests.
 
 The arcade memory addresses the recorder relies on, and how each was verified, are documented in `mame/memory-map.lua`.
+
+## Visual captures and comparison
+
+```sh
+PACMAN_ROM_DIR=~/roms npm run capture -- --source mame --out /tmp/arcade-reference
+npm run capture -- --source gui --out /tmp/visualizer-actual
+npm run compare:visual -- --reference /tmp/arcade-reference --actual /tmp/visualizer-actual --out /tmp/visual-report
+node visual-browser.mjs                         # deterministic fixtures, mode/layout browser checks
+```
+
+Capture output is a version-1 manifest plus lossless PNGs. MAME snapshots are native upright 224 × 288: header y=0..23, maze y=24..271, footer y=272..287. `screen:snapshot` is documented at https://docs.mamedev.org/luascript/ref-devices.html. The recorder keeps its existing timing path when visual capture is disabled. GUI capture uses the existing scenario runner with separate server ports and captures only `[data-arcade-screen]`, excluding controls.
+
+Metadata records scenario, anchor, frame offset, state, phase, original dimensions, explicit crop/rotation/integer downscale, regions, and provenance. Normalization rotates clockwise in 90-degree steps and samples integer-scaled pixels without smoothing. Crops must fit the source. Comparisons reject unequal normalized dimensions. Regions use normalized coordinates.
+
+Reports write JSON and numbered reference/actual/difference PNGs. Differences count unequal RGBA pixels once and show changed pixels in magenta. A fixture pair passes only with identical pixels and matching state/phase. Live scenes remain `DIAGNOSTIC`; event timestamps alone cannot prove equal actor positions or animation phases. Missing captures, invalid dimensions, phase mismatches, and diagnostic-only results exit nonzero. No tolerance is chosen to make current output pass.
+
+The browser's `?visual=1` opt-in exposes `window.__arcadeVisual.setFixture(state, phaseMilliseconds)`, `clearFixture()`, and `snapshotMetadata()`. Display fixtures do not send server commands or trigger effects. State accepts parsed actor bytes (`pacman`, `ghosts`), optional exact frame keys for animation audits, `score`, `lives`, `level`, `highScore`, `pellets`, `fruit`, `eyes`, and `ready`. Normal page loads expose no fixture API. High score is session-local; fixtures set it explicitly.
+
+Known limits: maze SVG geometry, pellet presentation, grid-coordinate movement, and live actor phase may differ from MAME. Regional reports expose these; whole-screen identity is not claimed. ROMs remain outside this repository. Missing ROM/MAME/browser prerequisites are errors, never successful comparisons.
+
+For deterministic coverage of all directions, ghost foot frames, frightened variants, eyes, death artwork and level HUDs:
+
+```sh
+npm run capture -- --source gui --fixtures --out /tmp/visual-fixtures
+node visual-browser.mjs --mame-reference /tmp/arcade-reference --out /tmp/verified-visual
+npm run compare:visual -- --reference /tmp/verified-visual/reference --actual /tmp/verified-visual/actual --out /tmp/verified-report
+```
+
+The second command explicitly requires the supplied reference recordings and generates isolated reference/actual manifests for Pac-Man, Blinky, spare lives and fruit. It checks native pixels and live mode changes during READY, death, and level clear. Without `--mame-reference`, it performs browser-only checks and does not claim MAME validation. `--out` controls artifact location. The isolated crops have documented, fixed coordinates in the report; they measure artwork independently of engine placement. Whole-screen live reports retain placement discrepancies.

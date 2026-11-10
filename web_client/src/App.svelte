@@ -20,17 +20,16 @@
     border: 0;
   }
 
-  .maze-space {
+  .screen {position:absolute;left:50%;top:calc(50% - 26px);transform:translate(-50%,-50%);width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
+  .screen.arcade {height:calc(36*var(--grid-size));background:black;}
+  .maze-space {position:absolute;left:0;top:0;width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
+  .arcade .maze-space {top:calc(3*var(--grid-size));}
+  .arcade :global(.grid-element){box-shadow:none;pointer-events:none;}
+  .arcade :global(.pellet){background-color:#ffb8ae;}
+  .controls{position:fixed;bottom:8px;left:8px;right:8px;display:flex;gap:8px;}
+  .controls :global(.audio-controls),.controls :global(.mode-toggle){position:static;}
 
-    /* Positioning */
-    position: absolute;
-    transform: translate(50%, 50%);
-    bottom: calc(50% + 26px);
-    right: 50%;
-    width: calc(28 * var(--grid-size));
-    height: calc(31 * var(--grid-size));
-  }
-
+  .game-control{min-height:32px;padding:4px 8px;background:#222;color:white;border:1px solid #888;border-radius:4px;}
   .audio-toolbar {
     display: contents;
   }
@@ -43,6 +42,19 @@
 
 <script>
   import { onDestroy } from 'svelte';
+  import ArcadeHud from './lib/ArcadeHud.svelte';
+  import CaptureActors from './lib/CaptureActors.svelte';
+  import {createVisualCapture} from './lib/visualCapture.js';
+  import {hudLayoutForMode} from './lib/arcadeHud.js';
+  let visualFixture=null;
+  let animationPhase=0;
+  let highScore=0;
+  let lastAnimationTime=performance.now();
+  const animationTimer=setInterval(()=>{const now=performance.now();if(!displayFrozen&&!readyVisible&&!allActorsHidden&&pacmanActive)animationPhase+=now-lastAnimationTime;lastAnimationTime=now;},16);
+  createVisualCapture(window.location.search,window,fixture=>visualFixture=fixture);
+  $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
+  $: highScore=Math.max(highScore,currScore);
+  onDestroy(()=>{clearInterval(animationTimer);delete window.__arcadeVisual;});
   import AudioControls from './lib/AudioControls.svelte';
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
@@ -524,6 +536,8 @@
   if (timelineParams.enabled) {
     window.__arcadeTimeline = {
       events: () => timeline.events(),
+      elapsed: () => timeline.elapsed(),
+      state: () => structuredClone(latestFrame),
       reset: () => timeline.reset(),
       frame: () => latestFrame && {
         pacman: { row: latestFrame.pacman.rowState & 0x1f, col: latestFrame.pacman.colState & 0x1f },
@@ -970,7 +984,7 @@
   let innerHeight = 0;
   // On mobile, overflowing content can expand innerWidth beyond the viewport.
   $: gridSize = Math.max(0, Math.min(
-    (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / MAZE_ROWS,
+    (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / (arcadeLayout ? 36 : MAZE_ROWS),
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
 
@@ -1218,7 +1232,9 @@
   bind:innerHeight
 />
 
-<div class='maze-space' style:--grid-size="{gridSize}px">
+<div data-arcade-screen class="screen" class:arcade={arcadeLayout} style:--grid-size="{gridSize}px">
+{#if arcadeLayout}<ArcadeHud {gridSize} score={visualFixture?.state.score??currScore} lives={visualFixture?.state.lives??currLives} level={visualFixture?.state.level??currLevel} highScore={visualFixture?.state.highScore??highScore}/>{/if}
+<div class="maze-space">
 
   <Maze
     {gridSize}
@@ -1227,13 +1243,14 @@
   />
 
   <Pellets
-    pelletGrid={levelFrozen ? emptyPelletGrid : pelletGrid}
+    pelletGrid={visualFixture?.state.pellets??(levelFrozen ? emptyPelletGrid : pelletGrid)}
     {gridSize}
     {botSocket}
     {intersectionGrid}
     {showIntersections}
   />
 
+  {#if visualFixture}<CaptureActors fixture={visualFixture} {gridSize}/>{:else}
   <Fruit
     {gridSize}
     {fruitRowState}
@@ -1252,6 +1269,7 @@
     active={pacmanActive}
     moving={pacmanMoving}
     {deathEventId}
+    phase={animationPhase}
     ready={readyVisible}
   />
   {/if}
@@ -1261,6 +1279,7 @@
     <Ghost
       {gridSize}
       {modTicks}
+      phase={animationPhase}
       {updatePeriod}
       rowState={frozenGhosts?.[0]?.rowState ?? redRowState}
       colState={frozenGhosts?.[0]?.colState ?? redColState}
@@ -1275,6 +1294,7 @@
     <Ghost
       {gridSize}
       {modTicks}
+      phase={animationPhase}
       {updatePeriod}
       rowState={frozenGhosts?.[1]?.rowState ?? pinkRowState}
       colState={frozenGhosts?.[1]?.colState ?? pinkColState}
@@ -1289,6 +1309,7 @@
     <Ghost
       {gridSize}
       {modTicks}
+      phase={animationPhase}
       {updatePeriod}
       rowState={frozenGhosts?.[2]?.rowState ?? cyanRowState}
       colState={frozenGhosts?.[2]?.colState ?? cyanColState}
@@ -1303,6 +1324,7 @@
     <Ghost
       {gridSize}
       {modTicks}
+      phase={animationPhase}
       {updatePeriod}
       rowState={frozenGhosts?.[3]?.rowState ?? orangeRowState}
       colState={frozenGhosts?.[3]?.colState ?? orangeColState}
@@ -1319,6 +1341,8 @@
   {/each}
   {/key}
 
+  {/if}
+  {#if !arcadeLayout}
   <FruitInventory {gridSize} fruits={pickedFruits} />
 
   <Mps {gridSize} {mpsAvg} />
@@ -1351,10 +1375,17 @@
     {Directions}
   />
 
+  {/if}
+  {#if !visualFixture}
   {#key effectsRevision}
-    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} />
+    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} arcade={arcadeLayout} />
   {/key}
 
+  {/if}
+</div>
+</div>
+<div class="controls" style:--grid-size="{gridSize}px">
+  {#if arcadeLayout}<button class="game-control" on:click={togglePause}>Start / pause</button><button class="game-control" on:click={toggleReset}>Reset</button>{/if}
   <div class="audio-toolbar">
     <AudioControls
       enabled={audioEnabled}

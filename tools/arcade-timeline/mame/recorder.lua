@@ -33,8 +33,32 @@ end
 
 local frame = 0
 local events = {}
+local captureDir = os.getenv("ARCADE_CAPTURE_DIR")
+local captureIndex = 0
+local captureQueue = {}
+local captureOffsets = {readyShown = {30}, gameStarted = {1, 8, 16}, deathFrame = {0}, frightStarted = {15, 30}, frightFlashStart = {0}, eyesStarted = {5}}
 local function emit(type, data)
   events[#events + 1] = { frame = frame, type = type, data = data or {} }
+  if captureDir and captureOffsets[type] then
+    for _, offset in ipairs(captureOffsets[type]) do
+      captureQueue[#captureQueue + 1] = {type = type, phase = data and data.frame or 0, due = frame + offset, offset = offset}
+    end
+  end
+end
+local function captureDue()
+  for i = #captureQueue, 1, -1 do
+    local capture = captureQueue[i]
+    if frame >= capture.due then
+      captureIndex = captureIndex + 1
+      local name = capture.type .. "-" .. captureIndex
+      local err = manager.machine.screens[":screen"]:snapshot(captureDir .. "/" .. name .. ".png")
+      if err then error("Snapshot failed: " .. tostring(err)) end
+      local f = assert(io.open(captureDir .. "/" .. name .. ".meta", "w"))
+      f:write(capture.type .. "\n" .. frame .. "\n" .. capture.phase .. "\n" .. capture.offset)
+      f:close()
+      table.remove(captureQueue, i)
+    end
+  end
 end
 local function seen(type)
   for _, event in ipairs(events) do if event.type == type then return event.frame end end
@@ -303,5 +327,6 @@ subscription = emu.add_machine_frame_notifier(function()
     local caught = seen("pacmanCaught")
     done = caught or (started and read(map.pelletsEaten) >= 236 and frame > started + 900)
   end
+  if captureDir then captureDue() end
   if done or frame >= MAX_FRAMES then finish() end
 end)

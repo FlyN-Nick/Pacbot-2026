@@ -1,8 +1,23 @@
 <script>
   import { onDestroy } from 'svelte';
+  import Sprite from '../sprites/Sprite.svelte';
+  import {resolvePacmanFrame,selectDeathFrame,directionFor} from '../sprites/frames.js';
   import { GUI_TIMINGS } from '../guiTimings.js';
 
   export let gridSize;
+  export let phase=0;
+  export let frameOverride=null;
+  export let deathElapsedOverride=null;
+  let aliveFrame=null;
+  const motionPreference=window.matchMedia("(prefers-reduced-motion: reduce)");
+  let reducedMotion=motionPreference.matches;
+  const updateMotion=()=>reducedMotion=motionPreference.matches;
+  motionPreference.addEventListener("change",updateMotion);
+  let deathStarted=0;
+  let deathElapsed=0;
+  const clock=setInterval(()=>{if(dying)deathElapsed=performance.now()-deathStarted;},16);
+  $: aliveFrame=resolvePacmanFrame({previousFrame:aliveFrame,direction:directionFor(dirX,dirY),phase:reducedMotion?0:phase,active,moving,ready});
+  $: selectedFrame=frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
   export let pacmanRowState;
   export let pacmanColState;
   export let active = false;
@@ -44,79 +59,18 @@
     }
     clearTimeout(deathTimer);
     dying = true;
+    deathStarted=performance.now();deathElapsed=0;
     deathTimer = setTimeout(() => {
       dying = false;
     }, GUI_TIMINGS.deathAnimationMs);
   }
 
-  onDestroy(() => { clearTimeout(deathTimer); });
+  onDestroy(() => { clearTimeout(deathTimer);clearInterval(clock);motionPreference.removeEventListener("change",updateMotion); });
 </script>
 
-{#if showPacman || dying}
-  <div
-    class="pacman-position"
-    style:--grid-size="{gridSize}px"
-    style:left="{gridSize * (dying ? lastX : posX)}px"
-    style:top="{gridSize * (dying ? lastY : posY)}px"
-  >
-    {#key dying ? deathEventId : 'alive'}
-      <div
-        class="pacman"
-        class:chomping={active && moving && !dying && !ready}
-        class:dying
-        style:--dir-angle="{dying ? lastRotation : rotation}deg"
-        style:--death-ms="{GUI_TIMINGS.deathAnimationMs}ms"
-        style:--death-steps={GUI_TIMINGS.deathFrames}
-      />
-    {/key}
+{#if showPacman || dying || deathElapsedOverride!==null}
+  <div class="pacman-position" style:left="{gridSize*(dying?lastX:posX)+gridSize/2}px" style:top="{gridSize*(dying?lastY:posY)+gridSize/2}px">
+    <Sprite frame={selectedFrame} scale={gridSize/8}/>
   </div>
 {/if}
-
-<style>
-  .pacman-position {
-    position: absolute;
-    width: var(--grid-size);
-    height: var(--grid-size);
-    pointer-events: none;
-    z-index: 3;
-  }
-
-  .pacman {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background: #ffe528;
-    clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 80%, 45% 50%, 100% 20%, 200% -100%);
-    transform: scale(1.5) rotate(var(--dir-angle));
-  }
-
-  .pacman.chomping {
-    animation: chomp 230ms linear infinite alternate;
-  }
-
-  .pacman.dying {
-    animation: death var(--death-ms) steps(var(--death-steps), end) forwards;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .pacman.chomping { animation: none; }
-    .pacman.dying { animation: reduced-death var(--death-ms) ease-in forwards; }
-  }
-
-  @keyframes reduced-death {
-    0%, 28% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-
-  @keyframes chomp {
-    to {
-      clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 52%, 45% 50%, 100% 48%, 200% -100%);
-    }
-  }
-
-  @keyframes death {
-    0% { clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 80%, 45% 50%, 100% 20%, 200% -100%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 1; }
-    45% { clip-path: polygon(-100% -100%, -100% 200%, 200% 200%, 100% 53%, 45% 50%, 100% 47%, 200% -100%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 1; }
-    100% { clip-path: circle(0% at 50% 50%); transform: scale(1.5) rotate(var(--dir-angle)); opacity: 0; }
-  }
-</style>
+<style>.pacman-position{position:absolute;transform:translate(-50%,-50%);line-height:0;pointer-events:none;z-index:3}</style>

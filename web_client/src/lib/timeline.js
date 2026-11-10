@@ -38,6 +38,11 @@ export function createTimeline({ enabled, now = () => performance.now() }) {
       entries = [];
       anchorMs = null;
     },
+    elapsed() {
+      if(!enabled||!entries.length)return null;
+      const base=anchorMs??Math.min(...entries.map(({ms})=>ms));
+      return (now()-base)/1000;
+    },
     events() {
       if (!enabled || entries.length === 0) return [];
       const base = anchorMs ?? Math.min(...entries.map(({ ms }) => ms));
@@ -49,7 +54,8 @@ export function createTimeline({ enabled, now = () => performance.now() }) {
 }
 
 /** Offset of each death-animation frame from the animation's start, in milliseconds. */
-export function deathFrameOffsetsMs({ deathAnimationMs, deathFrames }) {
+export function deathFrameOffsetsMs({ deathAnimationMs, deathFrames, deathFrameOffsetsMs: measured }) {
+  if(measured)return [...measured];
   return Array.from({ length: deathFrames }, (_, k) => k * deathAnimationMs / deathFrames);
 }
 
