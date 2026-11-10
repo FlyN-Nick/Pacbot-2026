@@ -15,4 +15,10 @@ export const GUI_TIMINGS = Object.freeze({
   deathEndToReadyMs: 132,
   // READY! after a death, before play resumes (death.readyToResume)
   deathReadyMs: 1898,
+  // Everything frozen after a ghost is eaten, with its score shown (ghostEaten.freeze)
+  ghostFreezeMs: 941,
+  // How fast eaten ghosts' eyes travel home, in tiles per second (ghostEaten.eyesSpeed)
+  eyesTilesPerSecond: 14.58,
+  // Loop period of the retreating-eyes sound (ghostEaten.eyesSoundPeriod)
+  eyesSoundPeriodMs: 264,
 });

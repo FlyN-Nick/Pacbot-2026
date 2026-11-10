@@ -16,6 +16,8 @@ const TOLERANCE = {
   audio: 0.05,
   count: 0,
 };
+// Speeds are compared within 5% of the arcade value
+const toleranceFor = (kind, arcade) => (kind === 'relative' ? 0.05 * arcade : TOLERANCE[kind]);
 
 /** Length of a PCM WAV file in seconds: the data chunk's size over the fmt chunk's byte rate. */
 function wavSeconds(url) {
@@ -41,6 +43,9 @@ const MAPPINGS = [
   { name: 'death animation frame count', ours: GUI_TIMINGS.deathFrames, key: 'death.frameCount', tolerance: 'count' },
   { name: 'death end to READY', ours: GUI_TIMINGS.deathEndToReadyMs / 1000, key: 'death.endToReady', tolerance: 'tick' },
   { name: 'READY after a death', ours: GUI_TIMINGS.deathReadyMs / 1000, key: 'death.readyToResume', tolerance: 'tick' },
+  { name: 'ghost-eaten freeze', ours: GUI_TIMINGS.ghostFreezeMs / 1000, key: 'ghostEaten.freeze', tolerance: 'tick' },
+  { name: 'eyes speed', ours: GUI_TIMINGS.eyesTilesPerSecond, key: 'ghostEaten.eyesSpeed', tolerance: 'relative' },
+  { name: 'eyes sound loop period', ours: GUI_TIMINGS.eyesSoundPeriodMs / 1000, key: 'ghostEaten.eyesSoundPeriod', tolerance: 'audio' },
 ];
 
 for (const { name, ours, key, tolerance } of MAPPINGS) {
@@ -50,7 +55,7 @@ for (const { name, ours, key, tolerance } of MAPPINGS) {
     continue;
   }
   test(`${name} matches the arcade (${key})`, () => {
-    assert.ok(Math.abs(ours - arcade) <= TOLERANCE[tolerance] + 1e-9,
-      `ours ${ours}, arcade ${arcade}, tolerance ${TOLERANCE[tolerance]}`);
+    const allowed = toleranceFor(tolerance, arcade);
+    assert.ok(Math.abs(ours - arcade) <= allowed + 1e-9, `ours ${ours}, arcade ${arcade}, tolerance ${allowed}`);
   });
 }
