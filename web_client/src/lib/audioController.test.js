@@ -255,3 +255,12 @@ test('the audio graph is only available once unlocked and enabled', async () => 
   controller.setEnabled(false);
   assert.equal(controller.getAudioGraph(), null);
 });
+
+test('the intermission music is gone', async () => {
+  const f = fixture();
+  const controller = createAudioController({ contextFactory: () => f.context, fetcher: f.fetcher });
+  controller.setEnabled(true);
+  await controller.unlock();
+  await controller.play('intermission');
+  assert.equal(f.urls.length, 0);
+});

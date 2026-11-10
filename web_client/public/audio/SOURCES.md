@@ -9,7 +9,6 @@ These files were extracted from the [ClassicGaming.cc Pac-Man sounds page](https
 | `fruit` | `pacman_eatfruit.wav` | [pacman-eatfruit.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-eatfruit.zip) |
 | `ghost` | `pacman_eatghost.wav` | [pacman-eatghost.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-eatghost.zip) |
 | `extraLife` | `pacman_extrapac.wav` | [pacman-extrapac.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-extrapac.zip) |
-| `intermission` | `pacman_intermission.wav` | [pacman-intermission.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-intermission.zip) |
 | `death` | `pacman_death.wav` | [pacman-death.zip](https://www.classicgaming.cc/classics/pac-man/files/sounds/pacman-death.zip) |
 | `frightened` | `fright.wav`, preceded by `fright_firstloop.wav` | [The Sounds Resource Pac-Man sound archive](https://sounds.spriters-resource.com/arcade/pacman/asset/404131/) |
 

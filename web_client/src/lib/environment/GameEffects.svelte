@@ -15,7 +15,6 @@
   const durations = {
     fruitEaten: 1100,
     gameOver: 3000,
-    levelChanged: 1600,
     lifeLost: 900,
     lifeGained: 1500,
   };
@@ -70,8 +69,6 @@
       </div>
     {:else if event.type === 'gameOver'}
       <div class="effect-banner game-over-banner">GAME OVER</div>
-    {:else if event.type === 'levelChanged'}
-      <div class="level-transition"><span class="effect-banner level-banner">LEVEL UP</span></div>
     {:else if event.type === 'lifeLost'}
       <div class="death-impact" aria-hidden="true"></div>
     {:else if event.type === 'lifeGained'}

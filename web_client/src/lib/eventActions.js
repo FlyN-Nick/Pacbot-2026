@@ -1,10 +1,10 @@
-// The intro, death and ghost-eaten sounds are played by the arcade sequencer (arcadeSequencer.js).
+// The intro, death and ghost-eaten sounds are played by the arcade sequencer (arcadeSequencer.js);
+// a level clear is silent, as in the arcade.
 const AUDIO_CUES = {
   pellet: 'chomp',
   powerPellet: 'frightened',
   fruitEaten: 'fruit',
   lifeGained: 'extraLife',
-  levelChanged: 'intermission',
 };
 
 export function getEventActions(events) {

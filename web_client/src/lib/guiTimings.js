@@ -21,4 +21,18 @@ export const GUI_TIMINGS = Object.freeze({
   eyesTilesPerSecond: 14.58,
   // Loop period of the retreating-eyes sound (ghostEaten.eyesSoundPeriod)
   eyesSoundPeriodMs: 264,
+  // Level clear: everything frozen until the maze starts flashing (levelComplete.toFirstFlash)
+  levelFlashStartMs: 1931,
+  // Each flash is 12 frames white then 12 blue (levelComplete.flashPeriod / 2)
+  levelFlashHalfMs: 198,
+  // Number of white flashes (levelComplete.flashCount)
+  levelFlashCount: 4,
+  // Walls blank while the arcade draws the new board (MAME probe: frame 883, clear at 670)
+  levelMazeBlankMs: 3515,
+  // New board shown (MAME probe: frame 903)
+  levelNewBoardMs: 3845,
+  // READY! on the new board (levelComplete.toReady)
+  levelReadyMs: 3927,
+  // READY! after a level clear, before play resumes (levelComplete.readyToResume)
+  levelReadyHoldMs: 1865,
 });

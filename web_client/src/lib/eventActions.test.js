@@ -16,9 +16,9 @@ test('game transitions select the matching audio cue without losing visual event
   ];
   const { audioCues, visualEvents } = getEventActions(events);
   assert.deepEqual(audioCues.map(({ name }) => name), [
-    'chomp', 'frightened', 'fruit', 'extraLife', 'intermission',
+    'chomp', 'frightened', 'fruit', 'extraLife',
   ]);
-  assert.deepEqual(audioCues.map(({ event }) => event.id), [1, 2, 4, 6, 7]);
+  assert.deepEqual(audioCues.map(({ event }) => event.id), [1, 2, 4, 6]);
   assert.deepEqual(visualEvents, events);
   assert.equal(visualEvents[2].row, 7);
   assert.equal(visualEvents[2].col, 8);
@@ -118,4 +118,8 @@ test('READY and death sounds come from the sequencer, not from events', () => {
 
 test('the ghost-eaten sound comes from the sequencer', () => {
   assert.deepEqual(getEventActions([{ type: 'ghostEaten', ghostIndex: 0 }]).audioCues, []);
+});
+
+test('a level change has no sound; the level-complete sequence is silent', () => {
+  assert.deepEqual(getEventActions([{ type: 'levelChanged' }]).audioCues, []);
 });

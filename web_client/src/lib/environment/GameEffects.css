@@ -70,18 +70,6 @@
   animation-duration: 1500ms;
 }
 
-.level-transition {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at center, #fbdc5755, #1b1d51a8 60%, #101028dd);
-  animation: level-wash 1600ms ease-out both;
-}
-
-.level-banner {
-  color: #fff38e;
-  animation-duration: 1600ms;
-}
-
 .death-impact {
   position: absolute;
   inset: 0;
@@ -124,6 +112,5 @@
 @media (prefers-reduced-motion: reduce) {
   .burst-ring { animation: none; opacity: 0; }
   .death-impact { animation: level-wash 900ms ease-out both; background: transparent; }
-  .level-transition { background: transparent; }
   .effect-popup, .effect-banner { animation-name: level-wash; }
 }

@@ -45,6 +45,11 @@ const MAPPINGS = [
   { name: 'READY after a death', ours: GUI_TIMINGS.deathReadyMs / 1000, key: 'death.readyToResume', tolerance: 'tick' },
   { name: 'ghost-eaten freeze', ours: GUI_TIMINGS.ghostFreezeMs / 1000, key: 'ghostEaten.freeze', tolerance: 'tick' },
   { name: 'eyes speed', ours: GUI_TIMINGS.eyesTilesPerSecond, key: 'ghostEaten.eyesSpeed', tolerance: 'relative' },
+  { name: 'level clear to first flash', ours: GUI_TIMINGS.levelFlashStartMs / 1000, key: 'levelComplete.toFirstFlash', tolerance: 'animation' },
+  { name: 'maze flash period', ours: 2 * GUI_TIMINGS.levelFlashHalfMs / 1000, key: 'levelComplete.flashPeriod', tolerance: 'animation' },
+  { name: 'maze flash count', ours: GUI_TIMINGS.levelFlashCount, key: 'levelComplete.flashCount', tolerance: 'count' },
+  { name: 'level clear to READY', ours: GUI_TIMINGS.levelReadyMs / 1000, key: 'levelComplete.toReady', tolerance: 'tick' },
+  { name: 'READY after a level clear', ours: GUI_TIMINGS.levelReadyHoldMs / 1000, key: 'levelComplete.readyToResume', tolerance: 'tick' },
   { name: 'eyes sound loop period', ours: GUI_TIMINGS.eyesSoundPeriodMs / 1000, key: 'ghostEaten.eyesSoundPeriod', tolerance: 'audio' },
 ];
 

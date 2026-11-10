@@ -4,12 +4,11 @@ const FILES = Object.freeze({
   fruit: 'pacman_eatfruit.wav',
   ghost: 'pacman_eatghost.wav',
   extraLife: 'pacman_extrapac.wav',
-  intermission: 'pacman_intermission.wav',
   death: 'pacman_death.wav',
   frightened: 'fright.wav',
   frightenedFirstLoop: 'fright_firstloop.wav'
 });
-const PRIORITY = { intro: 1, intermission: 2, death: 3 };
+const PRIORITY = { intro: 1, death: 3 };
 
 /** Browser audio stays silent until both enabled and unlocked by a user gesture. */
 export function createAudioController({
