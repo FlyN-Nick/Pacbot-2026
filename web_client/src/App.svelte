@@ -115,6 +115,14 @@
   let eyesFlightUntil = 0; // competition mode: the quick flight home
   let eyesFlightTimer;
   let runningKind = null;
+  let pageHidden = document.hidden;
+  function onVisibilityChange() {
+    pageHidden = document.hidden;
+    // Eyes pick up where they were, rather than jumping home after the hidden time
+    if (!pageHidden) eyesLastMs = performance.now();
+    updateBackgroundSound();
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange);
   // Level-complete state: walls white or blank, every actor hidden, pellets shown empty
   let mazeFlashing = false;
   let mazeBlank = false;
@@ -159,7 +167,8 @@
     });
     // The level-complete sequence is silent, as in the arcade
     const silent = levelFrozen || allActorsHidden;
-    const sound = silent ? null : soundForState({ eyes: running && eyesActive, frightened: activity.frightened, sirenAllowed });
+    // A hidden tab throttles the timers that keep synthesized sounds sweeping, so it stays quiet
+    const sound = soundForState({ eyes: running && eyesActive, frightened: activity.frightened, sirenAllowed, muted: silent || pageHidden });
     if (sound === 'eyes') eyesSound.start(); else eyesSound.stop();
     // Repeated calls are safe; they also restart after a priority jingle ends.
     if (sound === 'frightened') audioController.play('frightened', { loop: true });
@@ -1190,6 +1199,7 @@
   }
 
   onDestroy(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     runner.cancel();
     clearTimeout(dyingTimer);
     clearGhostEaten();

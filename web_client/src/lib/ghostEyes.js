@@ -39,8 +39,9 @@ export function eyesPositionAt(path, elapsedMs, tilesPerSecond) {
   return { row: a.row + (b.row - a.row) * part, col: a.col + (b.col - a.col) * part, done: false };
 }
 
-/** Which background sound plays: eyes beat fright, which beats the siren. */
-export function soundForState({ eyes, frightened, sirenAllowed }) {
+/** Which background sound plays: eyes beat fright, which beats the siren; nothing while muted. */
+export function soundForState({ eyes, frightened, sirenAllowed, muted = false }) {
+  if (muted) return null;
   if (eyes) return 'eyes';
   if (frightened) return 'frightened';
   return sirenAllowed ? 'siren' : null;

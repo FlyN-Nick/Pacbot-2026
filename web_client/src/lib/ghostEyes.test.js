@@ -55,3 +55,9 @@ test('the eyes sound beats fright, which beats the siren', () => {
     }
   }
 });
+
+test('a hidden page plays no background sound', () => {
+  for (const state of [{ eyes: true }, { frightened: true }, { sirenAllowed: true }]) {
+    assert.equal(soundForState({ ...state, muted: true }), null, JSON.stringify(state));
+  }
+});
