@@ -218,6 +218,8 @@
     eyesAnimation = null;
     eyesFlightUntil = 0;
     clearTimeout(eyesFlightTimer);
+    // A ghost remounted later must not replay an old flight home
+    ghostReturnEvents = [];
     eyesSound.stop();
   }
 
@@ -272,6 +274,8 @@
     clearTimeout(eyesFlightTimer);
     eyesFlightTimer = setTimeout(() => {
       eyesFlightUntil = 0;
+      // The flights are over; a ghost remounted later must not replay one
+      ghostReturnEvents = [];
       eyesSoundEnded();
       updateBackgroundSound();
     }, 650);
@@ -382,9 +386,14 @@
     // Show the mode in the address bar without adding a history entry
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, '', pathname + searchWithMode(search, mode) + hash);
+    // A death caught but not yet animated still gets its animation
+    const deathPending = currentKind() === 'death' && !dying;
     visualizerMode.set(mode);
     runner.cancel();
     clearSequenceDisplay();
+    if (deathPending) executeStep({ action: 'deathStart' });
+    // A start sequence cut short leaves the next start free to show READY
+    if (!sessionStarted) startRequested = false;
   }
 
   const popcount = (n) => { let count = 0; for (let v = n >>> 0; v; v &= v - 1) count++; return count; };
