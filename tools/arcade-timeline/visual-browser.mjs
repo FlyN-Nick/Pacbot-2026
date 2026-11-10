@@ -29,7 +29,7 @@ try{
  const reference=path.join(path.resolve(referenceDir),'start/gameStarted-2.png');
  assert.ok(fs.existsSync(reference),`Missing MAME reference: ${reference}`);
   const native=PNG.sync.read(fs.readFileSync(reference));
-  const fixture={ready:true,score:0,lives:3,level:1,highScore:0,pacman:{rowState:23,colState:13,frame:'pacman-left-2'},ghosts:[{rowState:11,colState:13,color:'red',frame:'ghost-red-left-0'}]};
+  const fixture={pellets:Array.from({length:31},()=>Array(28).fill(0)),ready:true,score:0,lives:3,level:1,highScore:0,pacman:{rowState:23,colState:13,frame:'pacman-left-2'},ghosts:[{rowState:11,colState:13,color:'red',frame:'ghost-red-left-0'}]};
   await page.evaluate(state=>window.__arcadeVisual.setFixture(state,0),fixture);await page.waitForTimeout(50);
   const actual=PNG.sync.read(await page.locator('[data-arcade-screen]').screenshot());
   assert.deepEqual([actual.width,actual.height],[224,288]);

@@ -66,3 +66,5 @@ npm run compare:visual -- --reference /tmp/verified-visual/reference --actual /t
 ```
 
 The second command explicitly requires the supplied reference recordings and generates isolated reference/actual manifests for Pac-Man, Blinky, spare lives and fruit. It checks native pixels and live mode changes during READY, death, and level clear. Without `--mame-reference`, it performs browser-only checks and does not claim MAME validation. `--out` controls artifact location. The isolated crops have documented, fixed coordinates in the report; they measure artwork independently of engine placement. Whole-screen live reports retain placement discrepancies.
+
+`node death-bot-browser.mjs` checks sprite transparency over colored avoidance cells and reproduces the simulation bot's automatic resume during a death. It verifies that the arcade death artwork advances, the death audio source starts, and the next life resumes on schedule. The bot channel is controlled through Playwright WebSocket routing; the game server and renderer are real isolated processes.

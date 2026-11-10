@@ -85,7 +85,10 @@
   const timeline = createTimeline({ enabled: timelineParams.enabled });
   const frameTimelineTracker = createFrameTimelineTracker();
   // Record when the start music really starts and stops (it can be cut short)
-  const recordMusicStart = ({ name }) => { if (name === 'intro') timeline.record('musicStarted'); };
+  const recordMusicStart = ({ name, duration }) => {
+    if (name === 'intro') timeline.record('musicStarted');
+    if (name === 'death') timeline.record('deathSoundStarted', { duration });
+  };
   const recordMusicEnd = ({ name }) => { if (name === 'intro') timeline.record('musicEnded'); };
 
   const audioController = createAudioController({
@@ -953,6 +956,9 @@
           break;
         }
         case 'resume_game': {
+          // Simulation auto-resumes after a life/level change. Let the arcade
+          // sequencer finish its animation, sound and READY hold first.
+          if ($visualizerMode === 'arcade' && runner.running) break;
           sendControl('P');
           console.log('Bot client requested game resume');
           break;
