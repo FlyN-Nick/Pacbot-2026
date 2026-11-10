@@ -77,7 +77,7 @@ function levelCompleteSteps(mode, timings) {
     { atMs: timings.levelMazeBlankMs, action: 'mazeBlank', blank: true },
     { atMs: timings.levelNewBoardMs, action: 'mazeBlank', blank: false },
     { atMs: timings.levelNewBoardMs, action: 'releaseDisplay' },
-    { atMs: timings.levelReadyMs, action: 'showActors' },
+    { atMs: timings.levelReadyMs, action: 'showActors', all: true },
   );
   if (mode === 'arcade') {
     const resumeAt = timings.levelReadyMs + timings.levelReadyHoldMs;
@@ -119,7 +119,7 @@ export function resumedElsewhere({ runningKind, wasPaused, nowRunning }) {
 
 /**
  * Runs one plan at a time. Steps due at the same time run together, in plan
- * order. Holds and resumes are skipped if the mode is competition when they come due.
+ * order; steps at time 0 run during run() itself. Holds and resumes are skipped if the mode is competition when they come due.
  */
 export function createSequenceRunner({ execute, getMode, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let timers = [];
@@ -135,18 +135,24 @@ export function createSequenceRunner({ execute, getMode, setTimer = setTimeout, 
     cancel();
     const runToken = token;
     const times = [...new Set(plan.map(({ atMs }) => atMs))];
-    times.forEach((atMs, i) => {
+    const runGroup = (atMs) => {
+      for (const step of plan.filter((s) => s.atMs === atMs)) {
+        if (token !== runToken) return;
+        if (SERVER_ACTIONS.has(step.action) && getMode() === 'competition') continue;
+        execute(step);
+      }
+    };
+    const last = times.at(-1);
+    for (const atMs of times.filter((t) => t > 0)) {
       const timer = setTimer(() => {
         timers = timers.filter((t) => t !== timer);
-        for (const step of plan.filter((s) => s.atMs === atMs)) {
-          if (token !== runToken) return;
-          if (SERVER_ACTIONS.has(step.action) && getMode() === 'competition') continue;
-          execute(step);
-        }
-        if (i === times.length - 1 && token === runToken) timers = [];
+        runGroup(atMs);
+        if (atMs === last && token === runToken) timers = [];
       }, atMs);
       timers.push(timer);
-    });
+    }
+    // Steps due now run at once, before the browser can paint the frame that triggered them
+    if (times.includes(0)) runGroup(0);
   }
 
   return {

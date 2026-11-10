@@ -195,7 +195,7 @@ test('arcade level complete freezes, flashes 4 times, shows the new board and RE
     step(3317, 'mazeFlash', { white: false }),
     step(3515, 'mazeBlank', { blank: true }),
     step(3845, 'mazeBlank', { blank: false }), step(3845, 'releaseDisplay'),
-    step(3927, 'showActors'), step(3927, 'showReady'),
+    step(3927, 'showActors', { all: true }), step(3927, 'showReady'),
     step(5827, 'hideReady'), step(5827, 'resume'),
   ]);
   assert.ok(!steps.some((s) => s.action === 'hold'));
@@ -206,7 +206,7 @@ test('competition level complete shows the same flash but no READY and no resume
   const steps = levelPlan('competition');
   const actions = steps.map(({ action }) => action);
   for (const action of ['hold', 'resume', 'showReady', 'hideReady']) assert.ok(!actions.includes(action), action);
-  assert.deepEqual(steps.at(-1), step(3927, 'showActors'));
+  assert.deepEqual(steps.at(-1), step(3927, 'showActors', { all: true }));
   assert.deepEqual(steps.slice(0, -1), levelPlan('arcade').filter((s) => s.atMs < 3927));
 });
 
@@ -227,4 +227,15 @@ test('a level sequence is abandoned when play resumes from somewhere else', () =
   assert.equal(resumedElsewhere({ runningKind: 'levelComplete', wasPaused: false, nowRunning: true }), false);
   assert.equal(resumedElsewhere({ runningKind: 'death', wasPaused: true, nowRunning: true }), false);
   assert.equal(resumedElsewhere({ runningKind: null, wasPaused: true, nowRunning: true }), false);
+});
+
+test('steps due at once run immediately, so no frame paints before a freeze', () => {
+  const { runner, done } = runnerWith();
+  runner.run(plan('death', 'arcade'));
+  assert.deepEqual(done, ['hold', 'freezeDisplay']);
+});
+
+test('the level plan shows every actor explicitly', () => {
+  const show = levelPlan('arcade').find((s) => s.action === 'showActors');
+  assert.deepEqual(show, step(3927, 'showActors', { all: true }));
 });

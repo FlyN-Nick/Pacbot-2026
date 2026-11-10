@@ -58,6 +58,7 @@
   import { createEyesSound } from './lib/eyesSound.js';
   import { soundForState } from './lib/ghostEyes.js';
   import { mergeEatenGhosts, addEyes, advanceEyes } from './lib/ghostEatenState.js';
+  import { levelClearFrame } from './lib/freezeFrames.js';
   import Eyes from './lib/agents/Eyes.svelte';
 
   // Arcade (demo) mode only with ?mode=arcade in the URL; otherwise competition
@@ -327,7 +328,7 @@
         }
         break;
       case 'showActors':
-        if (allActorsHidden) {
+        if (step.all) {
           allActorsHidden = false;
         } else {
           pacmanHidden = false;
@@ -450,7 +451,7 @@
       if (event.type === 'levelChanged') {
         timeline.anchor('levelCleared');
         clearGhostEaten();
-        catchFrame = latestFrame;
+        catchFrame = levelClearFrame(latestFrame);
         runSequence('levelComplete');
       }
     }
@@ -1244,8 +1245,8 @@
       {updatePeriod}
       rowState={frozenGhosts?.[0]?.rowState ?? redRowState}
       colState={frozenGhosts?.[0]?.colState ?? redColState}
-      frightState={redFrightState}
-      trappedState={redTrappedState}
+      frightState={frozenGhosts?.[0]?.frightState ?? redFrightState}
+      trappedState={frozenGhosts?.[0]?.trappedState ?? redTrappedState}
       returnEvent={ghostReturnEvents[0]}
       color='red'
     />
@@ -1258,8 +1259,8 @@
       {updatePeriod}
       rowState={frozenGhosts?.[1]?.rowState ?? pinkRowState}
       colState={frozenGhosts?.[1]?.colState ?? pinkColState}
-      frightState={pinkFrightState}
-      trappedState={pinkTrappedState}
+      frightState={frozenGhosts?.[1]?.frightState ?? pinkFrightState}
+      trappedState={frozenGhosts?.[1]?.trappedState ?? pinkTrappedState}
       returnEvent={ghostReturnEvents[1]}
       color='pink'
     />
@@ -1272,8 +1273,8 @@
       {updatePeriod}
       rowState={frozenGhosts?.[2]?.rowState ?? cyanRowState}
       colState={frozenGhosts?.[2]?.colState ?? cyanColState}
-      frightState={cyanFrightState}
-      trappedState={cyanTrappedState}
+      frightState={frozenGhosts?.[2]?.frightState ?? cyanFrightState}
+      trappedState={frozenGhosts?.[2]?.trappedState ?? cyanTrappedState}
       returnEvent={ghostReturnEvents[2]}
       color='cyan'
     />
@@ -1286,8 +1287,8 @@
       {updatePeriod}
       rowState={frozenGhosts?.[3]?.rowState ?? orangeRowState}
       colState={frozenGhosts?.[3]?.colState ?? orangeColState}
-      frightState={orangeFrightState}
-      trappedState={orangeTrappedState}
+      frightState={frozenGhosts?.[3]?.frightState ?? orangeFrightState}
+      trappedState={frozenGhosts?.[3]?.trappedState ?? orangeTrappedState}
       returnEvent={ghostReturnEvents[3]}
       color='orange'
     />
