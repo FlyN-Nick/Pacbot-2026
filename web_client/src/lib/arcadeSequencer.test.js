@@ -174,3 +174,48 @@ test('a switch to competition during the ghost freeze skips the resume', () => {
   clock.advance(2000);
   assert.deepEqual(done, ['hold', 'hideActors', 'showScore', 'cue', 'hideScore', 'showActors', 'startEyes']);
 });
+
+const LT = {
+  ...T, levelFlashStartMs: 1931, levelFlashHalfMs: 198, levelFlashCount: 4,
+  levelMazeBlankMs: 3515, levelNewBoardMs: 3845, levelReadyMs: 3927, levelReadyHoldMs: 1900,
+};
+const levelPlan = (mode) => planSequence({ kind: 'levelComplete', mode, timings: LT });
+
+test('arcade level complete freezes, flashes 4 times, shows the new board and READY, then resumes', () => {
+  const steps = levelPlan('arcade');
+  const whites = steps.filter((s) => s.action === 'mazeFlash' && s.white);
+  const blues = steps.filter((s) => s.action === 'mazeFlash' && !s.white);
+  assert.deepEqual(whites.map(({ atMs, flash }) => [atMs, flash]), [[1931, 1], [2327, 2], [2723, 3], [3119, 4]]);
+  assert.deepEqual(blues.map(({ atMs }) => atMs), [2129, 2525, 2921, 3317]);
+  assert.deepEqual(steps.slice(0, 4), [
+    step(0, 'freezeDisplay'), step(0, 'levelFreeze'),
+    step(1931, 'hideActors', { all: true }), step(1931, 'mazeFlash', { white: true, flash: 1 }),
+  ]);
+  assert.deepEqual(steps.slice(-8), [
+    step(3317, 'mazeFlash', { white: false }),
+    step(3515, 'mazeBlank', { blank: true }),
+    step(3845, 'mazeBlank', { blank: false }), step(3845, 'releaseDisplay'),
+    step(3927, 'showActors'), step(3927, 'showReady'),
+    step(5827, 'hideReady'), step(5827, 'resume'),
+  ]);
+  assert.ok(!steps.some((s) => s.action === 'hold'));
+  for (let i = 1; i < steps.length; i++) assert.ok(steps[i].atMs >= steps[i - 1].atMs, `sorted at ${i}`);
+});
+
+test('competition level complete shows the same flash but no READY and no resume', () => {
+  const steps = levelPlan('competition');
+  const actions = steps.map(({ action }) => action);
+  for (const action of ['hold', 'resume', 'showReady', 'hideReady']) assert.ok(!actions.includes(action), action);
+  assert.deepEqual(steps.at(-1), step(3927, 'showActors'));
+  assert.deepEqual(steps.slice(0, -1), levelPlan('arcade').filter((s) => s.atMs < 3927));
+});
+
+test('a switch to competition during the level sequence skips the resume', () => {
+  const { runner, clock, done, setMode } = runnerWith();
+  runner.run(levelPlan('arcade'));
+  clock.advance(1000);
+  setMode('competition');
+  clock.advance(10000);
+  assert.ok(!done.includes('resume'));
+  assert.ok(done.includes('showReady'));
+});

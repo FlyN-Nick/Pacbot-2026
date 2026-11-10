@@ -58,9 +58,41 @@ function ghostEatenSteps(mode, timings, ghosts) {
   ];
 }
 
+// The arcade's level clear: freeze, actors vanish as the maze flashes, blank maze,
+// new board, READY. The server pauses itself after a clear, so there is never a hold.
+function levelCompleteSteps(mode, timings) {
+  const start = timings.levelFlashStartMs;
+  const half = timings.levelFlashHalfMs;
+  const steps = [
+    { atMs: 0, action: 'freezeDisplay' },
+    { atMs: 0, action: 'levelFreeze' },
+    { atMs: start, action: 'hideActors', all: true },
+  ];
+  for (let n = 1; n <= timings.levelFlashCount; n++) {
+    const white = start + 2 * (n - 1) * half;
+    steps.push({ atMs: white, action: 'mazeFlash', white: true, flash: n });
+    steps.push({ atMs: white + half, action: 'mazeFlash', white: false });
+  }
+  steps.push(
+    { atMs: timings.levelMazeBlankMs, action: 'mazeBlank', blank: true },
+    { atMs: timings.levelNewBoardMs, action: 'mazeBlank', blank: false },
+    { atMs: timings.levelNewBoardMs, action: 'releaseDisplay' },
+    { atMs: timings.levelReadyMs, action: 'showActors' },
+  );
+  if (mode === 'arcade') {
+    const resumeAt = timings.levelReadyMs + timings.levelReadyHoldMs;
+    steps.push(
+      { atMs: timings.levelReadyMs, action: 'showReady' },
+      { atMs: resumeAt, action: 'hideReady' },
+      { atMs: resumeAt, action: 'resume' },
+    );
+  }
+  return steps;
+}
+
 /**
  * Steps for a sequence: kind is 'start', 'startDetected' (another client
- * resumed the server), 'death' or 'ghostEaten' (ghosts: [{ ghostIndex, row, col, points }]). Steps are ordered by atMs. serverPauses: the
+ * resumed the server), 'death', 'ghostEaten' (ghosts: [{ ghostIndex, row, col, points }]) or 'levelComplete'. Steps are ordered by atMs. serverPauses: the
  * server will pause itself for this death (Pac-Man was removed from the board).
  */
 export function planSequence({ kind, mode, timings, lastLife = false, serverPauses = false, ghosts = [] }) {
@@ -72,6 +104,7 @@ export function planSequence({ kind, mode, timings, lastLife = false, serverPaus
     }
     case 'death': return deathSteps(mode, timings, lastLife, serverPauses);
     case 'ghostEaten': return ghostEatenSteps(mode, timings, ghosts);
+    case 'levelComplete': return levelCompleteSteps(mode, timings);
     default: throw new Error(`unknown sequence: ${kind}`);
   }
 }
