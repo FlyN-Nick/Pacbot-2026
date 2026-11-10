@@ -20,20 +20,13 @@
     border: 0;
   }
 
-  .screen {position:absolute;left:50%;top:calc(50% - 26px);transform:translate(-50%,-50%);width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
+  .screen {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
   .screen.arcade {height:calc(36*var(--grid-size));background:black;}
   .maze-space {position:absolute;left:0;top:0;width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
   .arcade .maze-space {top:calc(3*var(--grid-size));}
-  .arcade :global(.grid-element){box-shadow:none;pointer-events:none;}
+  .arcade :global(.grid-element){box-shadow:none;}
+  .non-interactive :global(.grid-element){pointer-events:none;}
   .arcade :global(.pellet){background-color:#ffb8ae;}
-  .controls{position:fixed;bottom:8px;left:8px;right:8px;display:flex;gap:8px;}
-  .controls :global(.audio-controls),.controls :global(.mode-toggle){position:static;}
-
-  .game-control{min-height:32px;padding:4px 8px;background:#222;color:white;border:1px solid #888;border-radius:4px;}
-  .audio-toolbar {
-    display: contents;
-  }
-
   :global(.path) {
       border: 1px solid cyan !important;
   }
@@ -58,14 +51,13 @@
   $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
   $: highScore=Math.max(highScore,currScore);
   onDestroy(()=>{clearInterval(animationTimer);delete window.__arcadeVisual;delete window.__arcadePauseTrace;});
-  import AudioControls from './lib/AudioControls.svelte';
+  import HudControls from './lib/HudControls.svelte';
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
   import { GUI_TIMINGS } from './lib/guiTimings.js';
   import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
-  import ModeToggle from './lib/ModeToggle.svelte';
   import { WALLS, MAZE_ROWS as ROWS, MAZE_COLS as COLS } from './lib/maze.js';
   // A cleared board, shown while the level-complete sequence is frozen
   const emptyPelletGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -106,6 +98,7 @@
   let visualEvents = [];
   let effectsRevision = 0;
   let deathEventId = null;
+  let deathPosition = null;
   let ghostReturnEvents = [];
   let pacmanActive = false;
   let pacmanMoving = false;
@@ -161,6 +154,7 @@
     latestFrame = null;
     visualEvents = [];
     deathEventId = null;
+    deathPosition = null;
     runner.cancel();
     clearSequenceDisplay();
     startRequested = false;
@@ -347,6 +341,7 @@
         levelFrozen = false;
         break;
       case 'deathStart':
+        deathPosition = catchFrame?.pacman ? { ...catchFrame.pacman } : null;
         deathEventId = ++deathCount;
         dying = true;
         clearTimeout(dyingTimer);
@@ -586,12 +581,6 @@
   import Pellets from './lib/environment/Pellets.svelte';
 
   /* Info Boxes */
-  import Lives from './lib/info_boxes/Lives.svelte';
-  import FruitInventory from './lib/info_boxes/FruitInventory.svelte';
-  import Mps from './lib/info_boxes/Mps.svelte';
-  import Score from './lib/info_boxes/Score.svelte';
-  import Ticker from './lib/info_boxes/Ticker.svelte';
-  import Reset from './lib/info_boxes/reset.svelte';
 
   // Creating a websocket client
   var socket = new WebSocket(`ws://${config.ServerIP}:${timelineParams.wsPort ?? config.WebSocketPort}`);
@@ -1015,7 +1004,7 @@
   let innerHeight = 0;
   // On mobile, overflowing content can expand innerWidth beyond the viewport.
   $: gridSize = Math.max(0, Math.min(
-    (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / (arcadeLayout ? 36 : MAZE_ROWS),
+    (Math.min(innerHeight, document.documentElement.clientHeight) - 16) / (arcadeLayout ? 36 : MAZE_ROWS),
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
 
@@ -1276,7 +1265,7 @@
   bind:innerHeight
 />
 
-<div data-arcade-screen class="screen" class:arcade={arcadeLayout} style:--grid-size="{gridSize}px">
+<div data-arcade-screen class="screen" class:arcade={arcadeLayout} class:non-interactive={$visualizerMode==='arcade'} style:--grid-size="{gridSize}px">
 {#if arcadeLayout}<ArcadeHud {gridSize} score={visualFixture?.state.score??currScore} lives={visualFixture?.state.lives??currLives} level={visualFixture?.state.level??currLevel} highScore={visualFixture?.state.highScore??highScore}/>{/if}
 <div class="maze-space">
 
@@ -1313,6 +1302,7 @@
     active={pacmanActive}
     moving={pacmanMoving}
     {deathEventId}
+    {deathPosition}
     phase={animationPhase}
     ready={readyVisible}
   />
@@ -1386,40 +1376,8 @@
   {/key}
 
   {/if}
-  {#if !arcadeLayout}
-  <FruitInventory {gridSize} fruits={pickedFruits} />
+  <HudControls {gridSize} paused={gameMode === Modes.Paused} {audioEnabled} mode={$visualizerMode} on:pause={togglePause} on:reset={toggleReset} on:audio={toggleAudio} on:mode={(event) => changeMode(event.detail)} />
 
-  <Mps {gridSize} {mpsAvg} />
-
-  <Ticker
-    {gridSize}
-    {modTicks}
-    {updatePeriod}
-    {gameMode}
-    {modeSteps}
-    {modeDuration}
-    {Modes}
-    {togglePause}
-  />
-
-  <Reset
-    {gridSize}
-    {toggleReset}
-  />
-
-  <Score
-    {gridSize}
-    {currLevel}
-    {currScore}
-  />
-
-  <Lives
-    {gridSize}
-    {currLives}
-    {Directions}
-  />
-
-  {/if}
   {#if !visualFixture}
   {#key effectsRevision}
     <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} arcade={arcadeLayout} />
@@ -1427,17 +1385,4 @@
 
   {/if}
 </div>
-</div>
-<div class="controls" style:--grid-size="{gridSize}px">
-  {#if arcadeLayout}<button class="game-control" on:click={togglePause}>Start / pause</button><button class="game-control" on:click={toggleReset}>Reset</button>{/if}
-  <div class="audio-toolbar">
-    <AudioControls
-      enabled={audioEnabled}
-      on:toggle={toggleAudio}
-    />
-    <ModeToggle
-      mode={$visualizerMode}
-      on:change={(event) => changeMode(event.detail)}
-    />
-  </div>
 </div>

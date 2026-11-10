@@ -47,7 +47,7 @@ npm run compare:visual -- --reference /tmp/arcade-reference --actual /tmp/visual
 node visual-browser.mjs                         # deterministic fixtures, mode/layout browser checks
 ```
 
-Capture output is a version-1 manifest plus lossless PNGs. MAME snapshots are native upright 224 × 288: header y=0..23, maze y=24..271, footer y=272..287. `screen:snapshot` is documented at https://docs.mamedev.org/luascript/ref-devices.html. The recorder keeps its existing timing path when visual capture is disabled. GUI capture uses the existing scenario runner with separate server ports and captures only `[data-arcade-screen]`, excluding controls.
+Capture output is a version-1 manifest plus lossless PNGs. MAME snapshots are native upright 224 × 288: header y=0..23, maze y=24..271, footer y=272..287. `screen:snapshot` is documented at https://docs.mamedev.org/luascript/ref-devices.html. The recorder keeps its existing timing path when visual capture is disabled. GUI capture uses the existing scenario runner with separate server ports and captures only `[data-arcade-screen]`. Interactive controls live in the empty side pockets in both modes; comparison captures temporarily hide only `[data-game-controls]` and record `hiddenControls: true` in provenance, since those buttons have no MAME counterpart.
 
 Metadata records scenario, anchor, frame offset, state, phase, original dimensions, explicit crop/rotation/integer downscale, regions, and provenance. Normalization rotates clockwise in 90-degree steps and samples integer-scaled pixels without smoothing. Crops must fit the source. Comparisons reject unequal normalized dimensions. Regions use normalized coordinates.
 
@@ -77,3 +77,5 @@ Pause investigation checks:
 - `node bot-reset-browser.mjs` checks that automatic bot resets resume after the fresh-state acknowledgement, while explicit stops and manual resets stay paused.
 - The visualizer exposes a bounded local history at `window.__arcadePauseTrace.events()` and current server/sequence status at `window.__arcadePauseTrace.status()`. It records command origins, bot controls, sequence starts, server mode changes, and the before/after state supporting ghost-eaten detections. No trace is sent to an external service.
 - `node reload-pause-browser.mjs` checks that refreshing during an active READY hold releases the abandoned pause, while refreshing a manual pause preserves it. The same cleanup runs when the development app is destroyed by hot reload.
+
+`node hud-controls-browser.mjs` checks the shared arcade HUD and bitmap controls in both modes at narrow and short viewport sizes. Natural-death checks also assert that the death animation stays at the captured pre-respawn position.

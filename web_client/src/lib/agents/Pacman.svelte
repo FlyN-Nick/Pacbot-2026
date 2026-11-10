@@ -23,6 +23,7 @@
   export let active = false;
   export let moving = false;
   export let deathEventId = null;
+  export let deathPosition = null;
   // READY! is showing: Pac-Man waits without chomping
   export let ready = false;
 
@@ -52,7 +53,12 @@
 
   $: if (deathEventId != null && deathEventId !== seenDeathEventId) {
     seenDeathEventId = deathEventId;
-    if (showPacman) {
+    // The server may already have respawned Pac-Man while the arcade freeze
+    // plays. Death belongs to the captured position, not the current packet.
+    if (deathPosition) {
+      lastX = deathPosition.colState & 0x1f;
+      lastY = deathPosition.rowState & 0x1f;
+    } else if (showPacman) {
       lastX = posX;
       lastY = posY;
       lastRotation = rotation;

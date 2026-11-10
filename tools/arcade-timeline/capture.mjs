@@ -18,7 +18,7 @@ if(fs.readdirSync(out).length)throw Error('Output directory must be empty to pre
 const captures=[];
 function add(image,scenario,anchor,phase,extra={}) {
  const png=PNG.sync.read(fs.readFileSync(path.join(out,image)));
- captures.push(validateCapture({version:1,source,scenario,anchor,frameOffset:extra.frameOffset??0,state:anchor,phase,image,dimensions:{width:png.width,height:png.height},normalization:{},regions:png.width===224&&png.height===288?{hud:{x:0,y:0,width:224,height:24},maze:{x:0,y:24,width:224,height:248},footer:{x:0,y:272,width:224,height:16}}:{},provenance:{kind:'live',...extra}}));
+ captures.push(validateCapture({version:1,source,scenario,anchor,frameOffset:extra.frameOffset??0,state:anchor,phase,image,dimensions:{width:png.width,height:png.height},normalization:{},regions:png.width===224&&png.height===288?{hud:{x:0,y:0,width:224,height:24},maze:{x:0,y:24,width:224,height:248},footer:{x:0,y:272,width:224,height:16}}:{},provenance:{kind:'live',...(source==='gui'?{hiddenControls:true}:{}),...extra}}));
 }
 async function main(){
  if(!['gui','mame'].includes(source)) throw Error('source must be gui or mame');
@@ -42,7 +42,7 @@ async function main(){
     for(const fixture of visualFixtures()){
      await page.evaluate(f=>window.__arcadeVisual.setFixture(f.state,f.phase),fixture);
      await page.evaluate(()=>new Promise(requestAnimationFrame));
-     const name=fixture.name+'.png';await page.locator('[data-arcade-screen]').screenshot({path:path.join(out,name)});
+     const name=fixture.name+'.png';await page.locator('[data-arcade-screen]').screenshot({path:path.join(out,name),style:'[data-game-controls] { visibility: hidden !important; }'});
      add(name,'fixture',fixture.name,fixture.phase,{kind:'fixture',state:fixture.state});
     }
    }else{
@@ -62,7 +62,7 @@ async function main(){
       // One painted screenshot may satisfy multiple delayed checkpoints; actual latency remains in provenance.
       for(const {event,offset,key}of due){
        const name=`${scenario.name}-${event.type}-${event.frame??event.t}-${offset}.png`;
-       await page.locator('[data-arcade-screen]').screenshot({path:path.join(out,name),animations:'allow'});
+       await page.locator('[data-arcade-screen]').screenshot({path:path.join(out,name),animations:'allow',style:'[data-game-controls] { visibility: hidden !important; }'});
        const phase=event.frame??0;add(name,scenario.name,event.type,phase,{eventTime:event.t,observedTime:elapsed,requestedFrameOffset:offset,captureKey:key});
        captures.at(-1).frameOffset=offset;
       }
