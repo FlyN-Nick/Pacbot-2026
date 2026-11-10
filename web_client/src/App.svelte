@@ -43,6 +43,9 @@
 <script>
   import { onDestroy } from 'svelte';
   import ArcadeHud from './lib/ArcadeHud.svelte';
+  import {createPauseTrace} from './lib/pauseTrace.js';
+  const pauseTrace=createPauseTrace();
+  window.__arcadePauseTrace={events:()=>pauseTrace.events(),status:()=>({mode:gameMode,tick:currTicks,lives:currLives,level:currLevel,sequence:currentKind(),runnerActive:runner.running})};
   import CaptureActors from './lib/CaptureActors.svelte';
   import {createVisualCapture} from './lib/visualCapture.js';
   import {hudLayoutForMode} from './lib/arcadeHud.js';
@@ -54,7 +57,7 @@
   createVisualCapture(window.location.search,window,fixture=>visualFixture=fixture);
   $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
   $: highScore=Math.max(highScore,currScore);
-  onDestroy(()=>{clearInterval(animationTimer);delete window.__arcadeVisual;});
+  onDestroy(()=>{clearInterval(animationTimer);delete window.__arcadeVisual;delete window.__arcadePauseTrace;});
   import AudioControls from './lib/AudioControls.svelte';
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
@@ -99,6 +102,7 @@
   const fruitTypeForLevel = (level) => ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(level, 1) - 1, 12)];
   let audioEnabled = false;
   let latestFrame = null;
+  let pendingBotRestart = false;
   let visualEvents = [];
   let effectsRevision = 0;
   let deathEventId = null;
@@ -132,6 +136,7 @@
   let eyesFlightUntil = 0; // competition mode: the quick flight home
   let eyesFlightTimer;
   let runningKind = null;
+  let pendingSequenceResume = false;
   let pageHidden = document.hidden;
   function onVisibilityChange() {
     pageHidden = document.hidden;
@@ -252,8 +257,11 @@
   function runSequence(kind, { lastLife = false, serverPauses = false, ghosts = [] } = {}) {
     // A replaced level sequence must not leave its display behind
     if (currentKind() === 'levelComplete') clearLevelDisplay();
+    pauseTrace.record('sequenceStarted',{kind,mode:$visualizerMode,lastLife,serverPauses});
     runningKind = kind;
-    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts }));
+    const plan=planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts });
+    pendingSequenceResume=$visualizerMode==='arcade'&&plan.some(step=>step.action==='resume');
+    runner.run(plan);
   }
 
   const currentKind = () => (runner.running ? runningKind : null);
@@ -312,10 +320,11 @@
   function executeStep(step) {
     switch (step.action) {
       case 'hold':
-        sendToSocket('p');
+        sendToSocket('p',`sequence:${runningKind}`);
         break;
       case 'resume':
-        sendToSocket('P');
+        pendingSequenceResume=false;
+        sendToSocket('P',`sequence:${runningKind}`);
         timeline.record('gameStarted');
         break;
       case 'showReady':
@@ -397,18 +406,22 @@
   }
 
   // A pause or resume from a person or the bot client; it always wins over a sequence
-  function sendControl(control) {
+  function sendControl(control,source='manual') {
+    pauseTrace.record('controlRequested',{control,source,sequence:currentKind()});
+    if(source==='manual'||control==='p')pendingBotRestart=false;
     if (control === 'P' && canRequestStart()) {
       startRequested = true;
       runSequence('start');
       return;
     }
+    pauseTrace.record('sequenceCancelled',{reason:source,kind:currentKind()});
     runner.cancel();
     clearSequenceDisplay();
-    sendToSocket(control);
+    sendToSocket(control,source);
   }
 
   function changeMode(mode) {
+    pauseTrace.record('modeChanged',{from:$visualizerMode,to:mode,sequence:currentKind()});
     // Show the mode in the address bar without adding a history entry
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, '', pathname + searchWithMode(search, mode) + hash);
@@ -434,6 +447,7 @@
   }
 
   function routeFrame(frame) {
+    if(!latestFrame||frame.mode!==latestFrame.mode||frame.lives!==latestFrame.lives||frame.level!==latestFrame.level)pauseTrace.record('serverState',{mode:frame.mode,tick:frame.tick,lives:frame.lives,level:frame.level,score:frame.score,ghostCombo:frame.ghostCombo,pacman:frame.pacman,sequence:currentKind()});
     if (isGameReset(latestFrame, frame)) clearGameEffects();
     // Another client resumed play during the level sequence: show the live board
     if (resumedElsewhere({
@@ -492,6 +506,7 @@
     }
     const eaten = events.filter(({ type }) => type === 'ghostEaten');
     if (eaten.length) {
+      pauseTrace.record('ghostEaten',{ghosts:eaten.map(e=>({index:e.ghostIndex,row:e.row,col:e.col,points:e.points})),tick:frame.tick,combo:frame.ghostCombo,previousCombo:latestFrame?.ghostCombo,score:frame.score,previousScore:latestFrame?.score,previousPacman:latestFrame?.pacman,ghostStates:frame.ghosts,previousGhostStates:latestFrame?.ghosts});
       timeline.anchor('ghostEaten');
       const newlyEaten = eaten.map(({ ghostIndex, row, col, points }) => ({ ghostIndex, row, col, points }));
       // A ghost eaten during a running freeze joins it, so no ghost is left hidden
@@ -524,6 +539,14 @@
     }
     updateSirenStep(frame, activity);
     updateBackgroundSound();
+    // A simulation reset is a restart request. Wait for acknowledgement rather
+    // than relying on a second, timing-dependent bot resume message.
+    if(pendingBotRestart && frame.tick===0 && frame.mode===Modes.Paused && frame.lives>0){
+      pendingBotRestart=false;
+      sessionStarted=false;
+      pauseTrace.record('botRestartAcknowledged');
+      sendControl('P','bot reset');
+    }
   }
 
   // The death animation starts as the lifeLost event is routed
@@ -946,20 +969,22 @@
           break;
         }
         case 'reset_game': {
+          pauseTrace.record('botControl',{command:'reset_game',sequence:currentKind()});
           toggleReset();
+          pendingBotRestart=true;
           console.log('Bot client requested game reset');
           break;
         }
         case 'pause_game': {
-          sendControl('p');
+          sendControl('p','bot');
           console.log('Bot client requested game pause');
           break;
         }
         case 'resume_game': {
           // Simulation auto-resumes after a life/level change. Let the arcade
           // sequencer finish its animation, sound and READY hold first.
-          if ($visualizerMode === 'arcade' && runner.running) break;
-          sendControl('P');
+          if ($visualizerMode === 'arcade' && runner.running) {pauseTrace.record('botResumeDeferred',{sequence:currentKind()});break;}
+          sendControl('P','bot');
           console.log('Bot client requested game resume');
           break;
         }
@@ -1139,8 +1164,9 @@
   }
 
   // Send message to websocket server (with error handling for closed sockets)
-  const sendToSocket = (message) => {
+  const sendToSocket = (message,source='visualizer') => {
     if (socketOpen) {
+      if(['p','P','r','R'].includes(message))pauseTrace.record('commandSent',{command:message,source,sequence:currentKind()});
       socket.send(message);
     }
   }
@@ -1152,6 +1178,7 @@
   }
 
   const toggleReset = () => {
+    pendingBotRestart=false;
     // A reset always wins over a running arcade sequence
     runner.cancel();
     clearSequenceDisplay();
@@ -1218,7 +1245,18 @@
     }
   }
 
+  // Reload/HMR must not orphan a pause whose resume timer belongs to this page.
+  // A manual pause has no running plan; competition and last-life plans never resume.
+  function releaseAbandonedPause(){
+    if($visualizerMode==='arcade'&&runner.running&&pendingSequenceResume&&gameMode===Modes.Paused&&socket.readyState===WebSocket.OPEN){
+      pendingSequenceResume=false;
+      sendToSocket('P','page cleanup');
+    }
+  }
+  window.addEventListener('pagehide',releaseAbandonedPause);
   onDestroy(() => {
+    releaseAbandonedPause();
+    window.removeEventListener('pagehide',releaseAbandonedPause);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     runner.cancel();
     clearTimeout(dyingTimer);

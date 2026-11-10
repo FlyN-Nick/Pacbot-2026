@@ -70,3 +70,10 @@ The second command explicitly requires the supplied reference recordings and gen
 `node death-bot-browser.mjs` checks sprite transparency over colored avoidance cells and reproduces the simulation bot's automatic resume during a death. It verifies that the arcade death artwork advances, the death audio source starts, and the next life resumes on schedule. The bot channel is controlled through Playwright WebSocket routing; the game server and renderer are real isolated processes.
 
 `node sprite-boundary-browser.mjs` checks all Pac-Man movement frames at fractional scales and Retina pixel density. Sprite artwork must stay off the rectangle boundary; transparent atlas gutters keep adjacent sheet artwork out of those samples.
+
+Pause investigation checks:
+
+- `node natural-death-browser.mjs` tests the server's real collision/deferred-pause path, rather than only the debug kill command.
+- `node bot-reset-browser.mjs` checks that automatic bot resets resume after the fresh-state acknowledgement, while explicit stops and manual resets stay paused.
+- The visualizer exposes a bounded local history at `window.__arcadePauseTrace.events()` and current server/sequence status at `window.__arcadePauseTrace.status()`. It records command origins, bot controls, sequence starts, server mode changes, and the before/after state supporting ghost-eaten detections. No trace is sent to an external service.
+- `node reload-pause-browser.mjs` checks that refreshing during an active READY hold releases the abandoned pause, while refreshing a manual pause preserves it. The same cleanup runs when the development app is destroyed by hot reload.
