@@ -271,3 +271,44 @@ test('reset clears the baseline and event ids continue increasing', () => {
   assert.equal(next[0].type, 'lifeGained');
   assert.ok(next[0].id > first[0].id);
 });
+
+// The server can clear a ghost's eaten flag before the frame is sent: Pac-Man eats it with a
+// move just before a ghost update. The combo counter still rises, and the ghost loses its
+// fright and jumps into the house.
+const frightened = (rowState, colState) => ({ rowState, colState, frightState: 20, trappedState: 0 });
+const calm = (rowState, colState) => ({ rowState, colState, frightState: 0, trappedState: 0 });
+
+test('a ghost eaten without its eaten flag is still detected from the combo counter', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, pacman: { rowState: 5, colState: 7 },
+    ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200, pacman: { rowState: 5, colState: 6 },
+    ghosts: [frightened(20, 4), calm(14, 13), frightened(23, 21), frightened(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [1]);
+});
+
+test('fright ending on its own is not mistaken for an eat', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 2, ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 2,
+    ghosts: [calm(20, 4), calm(5, 7), calm(23, 21), calm(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten'), []);
+});
+
+test('an eat seen through its flag is not counted twice', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200,
+    ghosts: [frightened(20, 4), { rowState: 32, colState: 32, frightState: 20, trappedState: 0x80 }, frightened(23, 21), frightened(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [1]);
+});
+
+test('when the flag is missing, the ghost that jumped home is the one eaten', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, pacman: { rowState: 20, colState: 4 },
+    ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  // Ghost 0 jumped into the house; ghost 3 merely lost fright where it was
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200, pacman: { rowState: 20, colState: 3 },
+    ghosts: [calm(14, 11), frightened(5, 7), frightened(23, 21), calm(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [0]);
+});

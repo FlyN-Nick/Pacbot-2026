@@ -53,6 +53,35 @@ function snapshot(frame) {
   };
 }
 
+const isFrightened = (ghost) => ((ghost?.frightState ?? 0) & 0x7f) > 0;
+const tileOf = ({ rowState, colState }) => ({ row: rowState & 0x1f, col: colState & 0x1f });
+const tileDistance = (a, b) => Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+
+/**
+ * Ghosts eaten without their eaten flag. The server clears the flag at a ghost
+ * update, and when Pac-Man eats a ghost by moving just before one, the flag is
+ * cleared before any frame shows it. The combo counter still counts the eat, and
+ * the eaten ghost loses its fright and jumps into the house in the same frame.
+ */
+function unflaggedEats(previous, frame, flagged, powerPelletCount) {
+  // A power pellet resets the combo, so only this frame's eats are left in it
+  const eats = powerPelletCount > 0 ? frame.ghostCombo : frame.ghostCombo - previous.ghostCombo;
+  const missing = eats - flagged.length;
+  if (!(missing > 0)) return [];
+  const pacman = tileOf(previous.pacman);
+  return frame.ghosts
+    .map((ghost, ghostIndex) => ({ ghostIndex, before: previous.ghosts[ghostIndex], ghost }))
+    .filter(({ ghostIndex, before, ghost }) => !flagged.includes(ghostIndex) &&
+      isFrightened(before) && !isFrightened(ghost))
+    // The eaten one jumped (teleported home); prefer the biggest jump, then the one nearest Pac-Man
+    .map((candidate) => ({ ...candidate,
+      jump: tileDistance(tileOf(candidate.before), tileOf(candidate.ghost)),
+      nearPacman: tileDistance(tileOf(candidate.before), pacman) }))
+    .sort((a, b) => b.jump - a.jump || a.nearPacman - b.nearPacman)
+    .slice(0, missing)
+    .map(({ ghostIndex }) => ghostIndex);
+}
+
 export function createGameEventTracker() {
   let previous = null;
   let nextId = 1;
@@ -106,6 +135,10 @@ export function createGameEventTracker() {
         add({ type: 'ghostEaten', ghostIndex });
       }
     });
+    for (const ghostIndex of unflaggedEats(previous, frame, eatenGhosts, powerPelletCount)) {
+      eatenGhosts.push(ghostIndex);
+      add({ type: 'ghostEaten', ghostIndex });
+    }
 
     const wasFruitVisible = isVisible(previous.fruit);
     const fruitIsGone = !isVisible(frame.fruit);
