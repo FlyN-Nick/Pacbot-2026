@@ -3,8 +3,8 @@ import { GAPS, COUNTS, DERIVED, SIREN, GUI_NOT_IMPLEMENTED } from './gaps.mjs';
 
 const ARCADE_FPS = 60.606;
 
-// Competition mode shows no READY after a death, so these have nothing to measure.
-const COMPETITION_NOT_APPLICABLE = new Set(['death.endToReady', 'death.readyToResume']);
+// Competition mode shows no READY after a death and keeps the quick eyes flight, so these have nothing to measure.
+const COMPETITION_NOT_APPLICABLE = new Set(['death.endToReady', 'death.readyToResume', 'ghostEaten.eyesSpeed']);
 
 /** Allowed difference for a measurement kind, in seconds (or events, for counts; or 5% of target, for relative). */
 export function toleranceFor(kind, gameFps, target) {

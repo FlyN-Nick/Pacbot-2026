@@ -57,7 +57,7 @@ export const SCENARIOS = [
         await ctx.sleep(100);
       }
       await ctx.waitForEvent('ghostEaten', 1000);
-      await ctx.sleep(1500); // room for the freeze and score popup
+      await ctx.waitForEvent('eyesSoundEnded', 10000); // the freeze, then the eyes get home
     },
   },
   {

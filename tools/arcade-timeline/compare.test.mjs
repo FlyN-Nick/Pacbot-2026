@@ -245,3 +245,9 @@ test('the eyes sound length row is replaced and the eyes events are implemented'
   assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundStarted'), false);
   assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundEnded'), false);
 });
+
+test('eyes speed does not apply in competition mode, which keeps the quick flight', () => {
+  const reference = { 'ghostEaten.eyesSpeed': ref(14.58, 'tiles/s') };
+  const rows = compareTimelines({ reference, gameFps: 24, mode: 'competition', gui: [timeline('ghostEaten', [])] });
+  assert.equal(row(rows, 'ghostEaten.eyesSpeed').status, 'not applicable');
+});
