@@ -55,6 +55,9 @@
   import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
   import { planSequence, createSequenceRunner } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
+  import { createEyesSound } from './lib/eyesSound.js';
+  import { planEyesPath, eyesPositionAt, soundForState } from './lib/ghostEyes.js';
+  import Eyes from './lib/agents/Eyes.svelte';
 
   // Arcade (demo) mode only with ?mode=arcade in the URL; otherwise competition
   visualizerMode.set(resolveMode(window.location.search));
@@ -96,8 +99,21 @@
   let dyingTimer;
   let deathCount = 0;
   let lastSirenStep = null;
+  let sirenStep = 1;
+  // Ghost-eaten state: hidden actors and scores during the freeze, eyes travelling home
+  let hiddenGhosts = new Set();
+  let pacmanHidden = false;
+  let scoresVisible = [];
+  let eyes = []; // [{ ghostIndex, path, elapsedMs }]
+  let eyesPositions = [];
+  let eyesAnimation = null;
+  let eyesLastMs = 0;
+  let eyesFlightUntil = 0; // competition mode: the quick flight home
+  let eyesFlightTimer;
+  let runningKind = null;
   const siren = createSiren({ getAudio: () => audioController.getAudioGraph() });
-  audioController.onStopAll(() => siren.stop());
+  const eyesSound = createEyesSound({ getAudio: () => audioController.getAudioGraph(), periodMs: GUI_TIMINGS.eyesSoundPeriodMs });
+  audioController.onStopAll(() => { siren.stop(); eyesSound.stop(); });
   const runner = createSequenceRunner({ execute: executeStep, getMode: () => $visualizerMode });
   let pickedFruits = {};
 
@@ -122,12 +138,26 @@
     audioController.stopAll();
   }
 
-  function syncFrightenedAudio() {
-    if (latestFrame && getFrameActivity(latestFrame, socketOpen).frightened) {
-      // Repeated calls are safe; they also restart after a priority jingle ends.
-      audioController.play('frightened', { loop: true });
+  // One background sound at a time: returning eyes, then fright, then the siren
+  function updateBackgroundSound() {
+    const frame = latestFrame;
+    const activity = frame ? getFrameActivity(frame, socketOpen) : { active: false, frightened: false };
+    const running = Boolean(frame) && activity.active && frame.mode !== Modes.Paused;
+    const eyesActive = (eyes.length > 0 && !pacmanHidden) || performance.now() < eyesFlightUntil;
+    const sirenAllowed = Boolean(frame) && sirenShouldPlay({
+      active: activity.active, paused: frame.mode === Modes.Paused,
+      frightened: false, eyes: false, dying, ready: readyVisible,
+    });
+    const sound = soundForState({ eyes: running && eyesActive, frightened: activity.frightened, sirenAllowed });
+    if (sound === 'eyes') eyesSound.start(); else eyesSound.stop();
+    // Repeated calls are safe; they also restart after a priority jingle ends.
+    if (sound === 'frightened') audioController.play('frightened', { loop: true });
+    else audioController.stop('frightened');
+    if (sound === 'siren') {
+      siren.setStep(sirenStep);
+      siren.start();
     } else {
-      audioController.stop('frightened');
+      siren.stop();
     }
   }
 
@@ -140,7 +170,7 @@
     audioController.setEnabled(true);
     if (await audioController.unlock()) {
       audioEnabled = true;
-      syncFrightenedAudio();
+      updateBackgroundSound();
     } else {
       audioController.setEnabled(false);
       audioEnabled = false;
@@ -152,10 +182,87 @@
     displayFrozen = false;
     frozenFrame = null;
     ghostsHidden = false;
+    clearGhostEaten();
   }
 
-  function runSequence(kind, { lastLife = false, serverPauses = false } = {}) {
-    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses }));
+  // Stop the ghost-eaten freeze display and every eyes journey
+  function clearGhostEaten() {
+    hiddenGhosts = new Set();
+    pacmanHidden = false;
+    scoresVisible = [];
+    eyes = [];
+    eyesPositions = [];
+    if (eyesAnimation !== null) cancelAnimationFrame(eyesAnimation);
+    eyesAnimation = null;
+    eyesFlightUntil = 0;
+    clearTimeout(eyesFlightTimer);
+    eyesSound.stop();
+  }
+
+  function runSequence(kind, { lastLife = false, serverPauses = false, ghosts = [] } = {}) {
+    runningKind = kind;
+    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts }));
+  }
+
+  const currentKind = () => (runner.running ? runningKind : null);
+
+  const eyesSoundEnded = () => timeline.record('eyesSoundEnded', { periodSeconds: GUI_TIMINGS.eyesSoundPeriodMs / 1000 });
+
+  // Arcade mode: eyes follow the corridors home; the ghost reappears when they arrive
+  function startEyes(ghosts) {
+    if (eyes.length === 0) timeline.record('eyesSoundStarted');
+    eyes = [...eyes, ...ghosts.map(({ ghostIndex, row, col }) => ({ ghostIndex, path: planEyesPath({ row, col }), elapsedMs: 0 }))];
+    if (eyesAnimation === null) {
+      eyesLastMs = performance.now();
+      eyesAnimation = requestAnimationFrame(moveEyes);
+    }
+    updateBackgroundSound();
+  }
+
+  function moveEyes(now) {
+    const dt = Math.max(0, now - eyesLastMs);
+    eyesLastMs = now;
+    const rate = GUI_TIMINGS.eyesTilesPerSecond;
+    // Travelling eyes wait while another ghost-eaten freeze holds everything
+    if (!pacmanHidden) for (const entry of eyes) entry.elapsedMs += dt;
+    const arrived = [];
+    eyesPositions = eyes.map((entry) => {
+      const at = eyesPositionAt(entry.path, entry.elapsedMs, rate);
+      if (at.done) arrived.push(entry);
+      const i = Math.min(Math.floor(entry.elapsedMs / 1000 * rate), entry.path.length - 1);
+      const next = entry.path[Math.min(i + 1, entry.path.length - 1)];
+      return { ghostIndex: entry.ghostIndex, row: at.row, col: at.col,
+        dirRow: Math.sign(next.row - entry.path[i].row), dirCol: Math.sign(next.col - entry.path[i].col) };
+    });
+    if (arrived.length) {
+      for (const entry of arrived) {
+        hiddenGhosts.delete(entry.ghostIndex);
+        timeline.record('eyesTravelled', { tiles: entry.path.length - 1, seconds: entry.elapsedMs / 1000 });
+      }
+      hiddenGhosts = new Set(hiddenGhosts);
+      eyes = eyes.filter((entry) => !arrived.includes(entry));
+      eyesPositions = eyesPositions.filter(({ ghostIndex }) => eyes.some((entry) => entry.ghostIndex === ghostIndex));
+    }
+    if (eyes.length === 0) {
+      eyesAnimation = null;
+      eyesSoundEnded();
+      updateBackgroundSound();
+      return;
+    }
+    eyesAnimation = requestAnimationFrame(moveEyes);
+  }
+
+  // Competition mode: the quick flight home, with the eyes sound for as long
+  function startEyesFlight() {
+    if (performance.now() >= eyesFlightUntil) timeline.record('eyesSoundStarted');
+    eyesFlightUntil = performance.now() + 650;
+    clearTimeout(eyesFlightTimer);
+    eyesFlightTimer = setTimeout(() => {
+      eyesFlightUntil = 0;
+      eyesSoundEnded();
+      updateBackgroundSound();
+    }, 650);
+    updateBackgroundSound();
   }
 
   // Carry out one step of an arcade sequence (lib/arcadeSequencer.js)
@@ -198,6 +305,23 @@
       case 'cue':
         audioController.play(step.name);
         break;
+      case 'hideActors':
+        hiddenGhosts = new Set([...hiddenGhosts, ...step.ghostIndexes]);
+        pacmanHidden = true;
+        break;
+      case 'showActors':
+        pacmanHidden = false;
+        break;
+      case 'showScore':
+        scoresVisible = step.scores;
+        timeline.record('scorePopupShown');
+        break;
+      case 'hideScore':
+        scoresVisible = [];
+        break;
+      case 'startEyes':
+        startEyes(step.ghosts);
+        break;
     }
   }
 
@@ -230,26 +354,12 @@
 
   const popcount = (n) => { let count = 0; for (let v = n >>> 0; v; v &= v - 1) count++; return count; };
 
-  function updateSiren(frame, activity) {
+  function updateSirenStep(frame, activity) {
     const pelletsRemaining = frame.pelletRows.reduce((sum, row) => sum + popcount(row ?? 0), 0);
-    const step = sirenStepFor(pelletsRemaining);
-    if (activity.active && step !== lastSirenStep) {
-      lastSirenStep = step;
-      timeline.record('sirenStep', { pelletsRemaining, periodSeconds: SIREN_STEPS[step - 1].periodSeconds });
-    }
-    const play = sirenShouldPlay({
-      active: activity.active,
-      paused: frame.mode === Modes.Paused,
-      frightened: activity.frightened,
-      eyes: false, // no returning-eyes state until the ghost-eaten work
-      dying,
-      ready: readyVisible,
-    });
-    if (play) {
-      siren.setStep(step);
-      siren.start();
-    } else {
-      siren.stop();
+    sirenStep = sirenStepFor(pelletsRemaining);
+    if (activity.active && sirenStep !== lastSirenStep) {
+      lastSirenStep = sirenStep;
+      timeline.record('sirenStep', { pelletsRemaining, periodSeconds: SIREN_STEPS[sirenStep - 1].periodSeconds });
     }
   }
 
@@ -275,7 +385,6 @@
       fruit: position(frame.fruit),
     }), frame, latestFrame);
     for (const event of events) {
-      if (event.type === 'ghostEaten') ghostReturnEvents[event.ghostIndex] = event;
       if (event.type === 'fruitEaten') {
         const type = fruitTypeForLevel(frame.level);
         pickedFruits[type] = (pickedFruits[type] || 0) + 1;
@@ -288,17 +397,30 @@
       }
       if (event.type === 'lifeLost') {
         timeline.anchor('pacmanCaught');
+        clearGhostEaten();
         catchFrame = latestFrame;
         // A real death removes Pac-Man from the board and the server pauses itself
         const pacmanRemoved = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) !== 0;
         runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
       }
       if (event.type === 'gameOver') audioController.stopAll();
-      if (event.type === 'ghostEaten') {
-        timeline.anchor('ghostEaten');
-        timeline.record('scorePopupShown');
-      }
       if (event.type === 'levelChanged') timeline.anchor('levelCleared');
+    }
+    const eaten = events.filter(({ type }) => type === 'ghostEaten');
+    if (eaten.length) {
+      timeline.anchor('ghostEaten');
+      const ghosts = eaten.map(({ ghostIndex, row, col, points }) => ({ ghostIndex, row, col, points }));
+      const arcade = $visualizerMode === 'arcade';
+      // A start or death sequence isn't interrupted (the server is paused then anyway)
+      if (['start', 'startDetected', 'death'].includes(currentKind())) {
+        audioController.play('ghost');
+      } else {
+        runSequence('ghostEaten', { ghosts });
+      }
+      if (!arcade) {
+        for (const event of eaten) ghostReturnEvents[event.ghostIndex] = event;
+        startEyesFlight();
+      }
     }
     for (const { type, data } of frameTimelineTracker.update(frame, updatePeriod)) {
       timeline.record(type, data);
@@ -311,8 +433,8 @@
       // Frightened mode is driven by state, including pause and respawn.
       if (name !== 'frightened') audioController.play(name);
     }
-    syncFrightenedAudio();
-    updateSiren(frame, activity);
+    updateSirenStep(frame, activity);
+    updateBackgroundSound();
   }
 
   // The death animation starts as the lifeLost event is routed
@@ -1004,6 +1126,7 @@
   onDestroy(() => {
     runner.cancel();
     clearTimeout(dyingTimer);
+    clearGhostEaten();
     siren.stop();
     audioController.destroy();
     socket.close();
@@ -1043,6 +1166,7 @@
   />
 
   {#key effectsRevision}
+  {#if !pacmanHidden}
   <Pacman
     {gridSize}
     pacmanRowState={frozenPacman?.rowState ?? pacmanRowState}
@@ -1052,9 +1176,10 @@
     {deathEventId}
     ready={readyVisible}
   />
+  {/if}
 
   {#if !ghostsHidden}
-  {#if numActiveGhosts >= 1}
+  {#if numActiveGhosts >= 1 && !hiddenGhosts.has(0)}
     <Ghost
       {gridSize}
       {modTicks}
@@ -1068,7 +1193,7 @@
     />
   {/if}
 
-  {#if numActiveGhosts >= 2}
+  {#if numActiveGhosts >= 2 && !hiddenGhosts.has(1)}
     <Ghost
       {gridSize}
       {modTicks}
@@ -1082,7 +1207,7 @@
     />
   {/if}
 
-  {#if numActiveGhosts >= 3}
+  {#if numActiveGhosts >= 3 && !hiddenGhosts.has(2)}
     <Ghost
       {gridSize}
       {modTicks}
@@ -1096,7 +1221,7 @@
     />
   {/if}
 
-  {#if numActiveGhosts >= 4}
+  {#if numActiveGhosts >= 4 && !hiddenGhosts.has(3)}
     <Ghost
       {gridSize}
       {modTicks}
@@ -1110,6 +1235,10 @@
     />
   {/if}
   {/if}
+
+  {#each eyesPositions as eye (eye.ghostIndex)}
+    <Eyes {gridSize} row={eye.row} col={eye.col} dirRow={eye.dirRow} dirCol={eye.dirCol} />
+  {/each}
   {/key}
 
   <FruitInventory {gridSize} fruits={pickedFruits} />
@@ -1145,7 +1274,7 @@
   />
 
   {#key effectsRevision}
-    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} />
+    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} />
   {/key}
 
   <div class="audio-toolbar">

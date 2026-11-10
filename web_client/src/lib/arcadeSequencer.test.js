@@ -138,3 +138,39 @@ test('an arcade death the server pauses for itself is not held again', () => {
   const steps = planSequence({ kind: 'death', mode: 'arcade', timings: T, serverPauses: true });
   assert.deepEqual(steps, plan('death', 'arcade').filter(({ action }) => action !== 'hold'));
 });
+
+const ghosts = [
+  { ghostIndex: 0, row: 5, col: 6, points: 200 },
+  { ghostIndex: 2, row: 5, col: 7, points: 400 },
+];
+const GT = { ...T, ghostFreezeMs: 941 };
+
+test('arcade ghost eaten freezes with the scores, then sends the eyes home', () => {
+  assert.deepEqual(planSequence({ kind: 'ghostEaten', mode: 'arcade', timings: GT, ghosts }), [
+    step(0, 'hold'),
+    step(0, 'hideActors', { ghostIndexes: [0, 2] }),
+    step(0, 'showScore', { scores: ghosts }),
+    step(0, 'cue', { name: 'ghost' }),
+    step(941, 'hideScore'),
+    step(941, 'showActors'),
+    step(941, 'startEyes', { ghosts }),
+    step(941, 'resume'),
+  ]);
+});
+
+test('competition ghost eaten only shows the scores', () => {
+  assert.deepEqual(planSequence({ kind: 'ghostEaten', mode: 'competition', timings: GT, ghosts }), [
+    step(0, 'showScore', { scores: ghosts }),
+    step(0, 'cue', { name: 'ghost' }),
+    step(941, 'hideScore'),
+  ]);
+});
+
+test('a switch to competition during the ghost freeze skips the resume', () => {
+  const { runner, clock, done, setMode } = runnerWith();
+  runner.run(planSequence({ kind: 'ghostEaten', mode: 'arcade', timings: GT, ghosts }));
+  clock.advance(0);
+  setMode('competition');
+  clock.advance(2000);
+  assert.deepEqual(done, ['hold', 'hideActors', 'showScore', 'cue', 'hideScore', 'showActors', 'startEyes']);
+});

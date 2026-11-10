@@ -16,9 +16,9 @@ test('game transitions select the matching audio cue without losing visual event
   ];
   const { audioCues, visualEvents } = getEventActions(events);
   assert.deepEqual(audioCues.map(({ name }) => name), [
-    'chomp', 'frightened', 'ghost', 'fruit', 'extraLife', 'intermission',
+    'chomp', 'frightened', 'fruit', 'extraLife', 'intermission',
   ]);
-  assert.deepEqual(audioCues.map(({ event }) => event.id), [1, 2, 3, 4, 6, 7]);
+  assert.deepEqual(audioCues.map(({ event }) => event.id), [1, 2, 4, 6, 7]);
   assert.deepEqual(visualEvents, events);
   assert.equal(visualEvents[2].row, 7);
   assert.equal(visualEvents[2].col, 8);
@@ -114,4 +114,8 @@ test('only visible coordinate changes count as Pac-Man movement', () => {
 
 test('READY and death sounds come from the sequencer, not from events', () => {
   assert.deepEqual(getEventActions([{ type: 'gameStarted' }, { type: 'lifeLost' }]).audioCues, []);
+});
+
+test('the ghost-eaten sound comes from the sequencer', () => {
+  assert.deepEqual(getEventActions([{ type: 'ghostEaten', ghostIndex: 0 }]).audioCues, []);
 });

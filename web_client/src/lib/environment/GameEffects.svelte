@@ -6,12 +6,13 @@
   export let gridSize;
   // READY! is shown for as long as the arcade sequence says (App.svelte)
   export let ready = false;
+  // Scores of just-eaten ghosts, shown for as long as the ghost-eaten sequence says
+  export let scores = [];
 
   let visibleEvents = [];
   let latestEventId = 0;
   const timers = new Set();
   const durations = {
-    ghostEaten: 950,
     fruitEaten: 1100,
     gameOver: 3000,
     levelChanged: 1600,
@@ -51,14 +52,15 @@
   {#if ready}
     <div class="effect-banner ready-banner">READY!</div>
   {/if}
+  {#each scores as score (score.ghostIndex)}
+    <div
+      class="effect-popup ghost-score"
+      style:left="{gridSize * ((score.col ?? 13) + 0.5)}px"
+      style:top="{gridSize * ((score.row ?? 14) + 0.5)}px"
+    >{score.points ? `+${score.points}` : 'SCORE!'}</div>
+  {/each}
   {#each visibleEvents as event (event.id)}
-    {#if event.type === 'ghostEaten'}
-      <div
-        class="effect-popup ghost-score"
-        style:left="{gridSize * ((event.col ?? 13) + 0.5)}px"
-        style:top="{gridSize * ((event.row ?? 14) + 0.5)}px"
-      >{event.points ? `+${event.points}` : 'SCORE!'}</div>
-    {:else if event.type === 'fruitEaten'}
+    {#if event.type === 'fruitEaten'}
       <div
         class="fruit-burst"
         style:left="{gridSize * (event.col + 0.5)}px"

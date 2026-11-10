@@ -36,12 +36,34 @@ function deathSteps(mode, timings, lastLife, serverPauses) {
   return steps;
 }
 
+// The arcade freezes everything for a moment when a ghost is eaten, showing its score
+function ghostEatenSteps(mode, timings, ghosts) {
+  const at = timings.ghostFreezeMs;
+  if (mode !== 'arcade') {
+    return [
+      { atMs: 0, action: 'showScore', scores: ghosts },
+      { atMs: 0, action: 'cue', name: 'ghost' },
+      { atMs: at, action: 'hideScore' },
+    ];
+  }
+  return [
+    { atMs: 0, action: 'hold' },
+    { atMs: 0, action: 'hideActors', ghostIndexes: ghosts.map(({ ghostIndex }) => ghostIndex) },
+    { atMs: 0, action: 'showScore', scores: ghosts },
+    { atMs: 0, action: 'cue', name: 'ghost' },
+    { atMs: at, action: 'hideScore' },
+    { atMs: at, action: 'showActors' },
+    { atMs: at, action: 'startEyes', ghosts },
+    { atMs: at, action: 'resume' },
+  ];
+}
+
 /**
  * Steps for a sequence: kind is 'start', 'startDetected' (another client
- * resumed the server) or 'death'. Steps are ordered by atMs. serverPauses: the
+ * resumed the server), 'death' or 'ghostEaten' (ghosts: [{ ghostIndex, row, col, points }]). Steps are ordered by atMs. serverPauses: the
  * server will pause itself for this death (Pac-Man was removed from the board).
  */
-export function planSequence({ kind, mode, timings, lastLife = false, serverPauses = false }) {
+export function planSequence({ kind, mode, timings, lastLife = false, serverPauses = false, ghosts = [] }) {
   switch (kind) {
     case 'start': return startSteps(mode, timings);
     case 'startDetected': {
@@ -49,6 +71,7 @@ export function planSequence({ kind, mode, timings, lastLife = false, serverPaus
       return mode === 'arcade' ? [{ atMs: 0, action: 'hold' }, ...steps] : steps;
     }
     case 'death': return deathSteps(mode, timings, lastLife, serverPauses);
+    case 'ghostEaten': return ghostEatenSteps(mode, timings, ghosts);
     default: throw new Error(`unknown sequence: ${kind}`);
   }
 }
