@@ -20,6 +20,6 @@ export function selectDeathFrame(elapsedMs){
 }
 export function resolvePacmanFrame({previousFrame,direction,phase=0,active=false,moving=false,ready=false}){
  if(ready)return selectPacmanFrame({direction,phase:2});
- if(!previousFrame)return selectPacmanFrame({direction,phase:0});
+ if(!previousFrame)return selectPacmanFrame({direction,phase:active&&moving?Math.floor(phase/66):2});
  return active&&moving?selectPacmanFrame({direction,phase:Math.floor(phase/66)}):previousFrame;
 }
