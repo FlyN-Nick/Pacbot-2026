@@ -69,7 +69,8 @@ export const SCENARIOS = [
       const pellet = remainingPellet((await ctx.frame()).pellets);
       if (pellet) ctx.moveTo(...pellet);
       await ctx.waitForEvent('levelCleared', 5000);
-      await ctx.sleep(5000); // room for flashes and READY, if the GUI shows them
+      await ctx.waitForEvent('mazeFlash', 8000);
+      await ctx.sleep(6000); // room for the flashes, READY and (arcade mode) the resume
     },
   },
   {

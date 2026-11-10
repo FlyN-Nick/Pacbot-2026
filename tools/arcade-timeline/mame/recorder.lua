@@ -294,8 +294,11 @@ subscription = emu.add_machine_frame_notifier(function()
     local eaten = seen("ghostEaten")
     done = (eaten and (seen("eyesSoundEnded") or frame > eaten + 900)) or seen("pacmanCaught")
   elseif scenario == "levelComplete" then
+    -- Play resumes (gameStarted) after the READY that follows the clear
     local cleared = seen("levelCleared")
-    done = cleared and ((lastSeen("readyShown") or 0) > cleared + 10 or frame > cleared + 900)
+    local ready = lastSeen("readyShown")
+    local resumed = cleared and ready and ready > cleared and (lastSeen("gameStarted") or 0) > ready
+    done = cleared and (resumed or frame > cleared + 900)
   elseif scenario == "siren" then
     local caught = seen("pacmanCaught")
     done = caught or (started and read(map.pelletsEaten) >= 236 and frame > started + 900)

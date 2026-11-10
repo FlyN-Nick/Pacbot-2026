@@ -57,6 +57,9 @@ return {
   pelletTile = 0x10, powerPelletTile = 0x14,
   firstPelletsEaten = { 0x4238, 0x4258, 0x4278 }, -- tiles eaten first when Pac-Man is left idle (669, 678, 687)
   mazeWallColor = 0x4440, -- color RAM of a wall tile: 0x10 blue, 0x1F white during the level-complete flash (787, 811, 835, 859)
+  -- Level complete (clear at 670): siren bits clear (671); actors frozen until the first white (787),
+  -- when the sprites move off-screen; walls blank 0x00 while the new board is drawn (883), blue again (903),
+  -- READY (908)
   colorMazeWhite = 0x1F,
 
   -- Sound (RAM flags the game sets for the sound routines)

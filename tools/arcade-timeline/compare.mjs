@@ -1,10 +1,12 @@
 // Reduce timelines to named measurements and compare ours with the arcade reference.
-import { GAPS, COUNTS, DERIVED, SIREN, GUI_NOT_IMPLEMENTED } from './gaps.mjs';
+import { GAPS, COUNTS, DERIVED, SIREN } from './gaps.mjs';
 
 const ARCADE_FPS = 60.606;
 
-// Competition mode shows no READY after a death and keeps the quick eyes flight, so these have nothing to measure.
-const COMPETITION_NOT_APPLICABLE = new Set(['death.endToReady', 'death.readyToResume', 'ghostEaten.eyesSpeed']);
+// Competition mode shows no READY after a death or level clear and keeps the quick eyes flight, so these have nothing to measure.
+const COMPETITION_NOT_APPLICABLE = new Set([
+  'death.endToReady', 'death.readyToResume', 'ghostEaten.eyesSpeed', 'levelComplete.toReady', 'levelComplete.readyToResume',
+]);
 
 /** Allowed difference for a measurement kind, in seconds (or events, for counts; or 5% of target, for relative). */
 export function toleranceFor(kind, gameFps, target) {
@@ -84,7 +86,7 @@ export function movementDuringReady({ events }) {
   return [...new Set(moved.map((event) => event.actor))];
 }
 
-/** One row per measurement: pass, fail, did not complete, not implemented, or no reference. */
+/** One row per measurement: pass, fail, did not complete, not applicable, info, or no reference. */
 export function compareTimelines({ reference, gui, gameFps, mode = 'arcade' }) {
   const ours = Object.assign({}, ...gui.map(reduceTimeline));
 
@@ -111,7 +113,6 @@ export function compareTimelines({ reference, gui, gameFps, mode = 'arcade' }) {
     if (category === 'server') status = 'info';
     else if (mode === 'competition' && COMPETITION_NOT_APPLICABLE.has(key)) status = 'not applicable';
     else if (target === undefined) status = 'no reference';
-    else if (types.some((type) => GUI_NOT_IMPLEMENTED.has(type))) status = 'not implemented';
     else if (measured === undefined) status = 'did not complete';
     else status = Math.abs(measured - target) <= tolerance + 1e-9 ? 'pass' : 'fail';
     return { key, category, status, arcade, target, ours: measured, tolerance, unit };

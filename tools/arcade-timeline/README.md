@@ -31,8 +31,7 @@ Each measurement has a category: **server** (game rules such as fright length, u
 
 - `PASS` / `FAIL`: our value is within / outside the tolerance (one arcade frame for animation, 50 ms for audio, one server frame for game-tick timing, 5% for speeds such as the eyes' tiles per second, exact for counts).
 - `DID NOT COMPLETE`: the measurement started but its ending event never came.
-- `NOT IMPLEMENTED`: the visualizer has no such event yet (for example the maze flash).
-- `NOT APPLICABLE`: the check doesn't exist in this mode (competition mode has no READY after a death and no READY movement check).
+- `NOT APPLICABLE`: the check doesn't exist in this mode (competition mode has no READY after a death or level clear, no READY movement check, and keeps the quick eyes flight).
 - `NO REFERENCE`: the arcade value is missing; see the notes at the top of `mame/memory-map.lua`.
 
 The visualizer's end-of-pause events (`gameStarted`, `freezeEnded`) are recorded when it lets play continue, not observed from the server, so in competition mode those pause rows confirm only that the visualizer adds no hold. The guarantee that competition mode never pauses the server comes from the sequencer's unit tests.

@@ -35,19 +35,19 @@ test('a gap whose events never appear did not complete when the GUI implements t
   assert.equal(row(rows, 'start.musicLength').status, 'did not complete');
 });
 
-test('a gap using an event the GUI does not produce yet is not implemented', () => {
+test('a gap whose ending event the GUI never produced did not complete', () => {
   const gui = [timeline('levelComplete', [{ t: 0, type: 'levelCleared' }])];
   const rows = compareTimelines({ reference: { 'levelComplete.toFirstFlash': ref(1.93) }, gui, gameFps: 24 });
-  assert.equal(row(rows, 'levelComplete.toFirstFlash').status, 'not implemented');
+  assert.equal(row(rows, 'levelComplete.toFirstFlash').status, 'did not complete');
 });
 
-test('reference keys the GUI cannot produce yet do not stop the report', () => {
+test('reference keys missing from the GUI run do not stop the report', () => {
   const gui = [timeline('start', [{ t: 0, type: 'readyShown' }, { t: 1.25, type: 'gameStarted' }])];
   const rows = compareTimelines({
     reference: { 'levelComplete.flashCount': ref(4, 'count'), 'start.readyToGameStarted': ref(4.27) },
     gui, gameFps: 24,
   });
-  assert.equal(row(rows, 'levelComplete.flashCount').status, 'not implemented');
+  assert.equal(row(rows, 'levelComplete.flashCount').status, 'did not complete');
   assert.equal(row(rows, 'start.readyToGameStarted').status, 'fail');
 });
 
@@ -198,10 +198,6 @@ test('post-death READY rows do not apply in competition mode', () => {
   assert.equal(row(arcade, 'death.readyToResume').status, 'pass');
 });
 
-test('the GUI now produces siren steps', async () => {
-  const { GUI_NOT_IMPLEMENTED } = await import('./gaps.mjs');
-  assert.equal(GUI_NOT_IMPLEMENTED.has('sirenStep'), false);
-});
 
 test('relative tolerance is 5% of the target', () => {
   assert.ok(Math.abs(toleranceFor('relative', 24, 20) - 1) < 1e-12);
@@ -241,9 +237,6 @@ test('eyes speed passes within 5%', () => {
 test('the eyes sound length row is replaced and the eyes events are implemented', async () => {
   const rows = compareTimelines({ reference: {}, gui: [], gameFps: 24 });
   assert.equal(row(rows, 'ghostEaten.eyesSoundLength'), undefined);
-  const { GUI_NOT_IMPLEMENTED } = await import('./gaps.mjs');
-  assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundStarted'), false);
-  assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundEnded'), false);
 });
 
 test('eyes speed does not apply in competition mode, which keeps the quick flight', () => {
@@ -257,4 +250,34 @@ test('the ghost freeze ends at freezeEnded, not at the move that made the catch'
     { t: 0, type: 'ghostEaten' }, { t: 0, type: 'actorMoved', actor: 'pacman' }, { t: 0.94, type: 'freezeEnded' },
   ]));
   assert.ok(Math.abs(reduced['ghostEaten.freeze'].value - 0.94) < 1e-9);
+});
+
+const levelEvents = [
+  { t: 0, type: 'readyShown' }, { t: 1, type: 'gameStarted' }, { t: 2, type: 'levelCleared' },
+  { t: 3.931, type: 'mazeFlash', flash: 1 }, { t: 4.327, type: 'mazeFlash', flash: 2 },
+  { t: 5.927, type: 'readyShown' }, { t: 7.827, type: 'gameStarted' },
+];
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+test('level complete measures the flash, its period and the READY after the clear', () => {
+  const reduced = reduceTimeline(timeline('levelComplete', levelEvents));
+  assert.ok(near(reduced['levelComplete.toFirstFlash'].value, 1.931));
+  assert.ok(near(reduced['levelComplete.flashPeriod'].value, 0.396));
+  assert.ok(near(reduced['levelComplete.toReady'].value, 3.927));
+  assert.ok(near(reduced['levelComplete.readyToResume'].value, 1.9));
+});
+
+test('in competition mode the flash is graded but the READY after a clear is not', () => {
+  const reference = {
+    'levelComplete.toFirstFlash': ref(1.931), 'levelComplete.toReady': ref(3.927), 'levelComplete.readyToResume': ref(1.9),
+  };
+  const rows = compareTimelines({ reference, gameFps: 24, mode: 'competition', gui: [timeline('levelComplete', levelEvents)] });
+  assert.equal(row(rows, 'levelComplete.toFirstFlash').status, 'pass');
+  assert.equal(row(rows, 'levelComplete.toReady').status, 'not applicable');
+  assert.equal(row(rows, 'levelComplete.readyToResume').status, 'not applicable');
+});
+
+test('the GUI produces every arcade event, so nothing is reported as not implemented', async () => {
+  const gaps = await import('./gaps.mjs');
+  assert.equal('GUI_NOT_IMPLEMENTED' in gaps, false);
 });

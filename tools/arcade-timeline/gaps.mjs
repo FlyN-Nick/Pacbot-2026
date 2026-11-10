@@ -19,8 +19,11 @@ export const GAPS = [
   { key: 'ghostEaten.freeze', category: 'pause', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'freezeEnded' }, tolerance: 'tick' },
   { key: 'ghostEaten.toFlash', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightFlashStart', flash: 1 }, tolerance: 'tick' },
   { key: 'ghostEaten.frightLength', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightEnded' }, tolerance: 'tick' },
-  { key: 'levelComplete.toFirstFlash', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'mazeFlash', flash: 1 }, tolerance: 'animation' },
-  { key: 'levelComplete.toReady', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'readyShown' }, tolerance: 'tick' },
+  // The server pauses itself after a clear, so the freeze before the flash is presentation, not a visualizer hold
+  { key: 'levelComplete.toFirstFlash', category: 'presentation', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'mazeFlash', flash: 1 }, tolerance: 'animation' },
+  { key: 'levelComplete.flashPeriod', category: 'presentation', scenario: 'levelComplete', from: { type: 'mazeFlash', flash: 1 }, to: { type: 'mazeFlash', flash: 2 }, tolerance: 'animation' },
+  { key: 'levelComplete.toReady', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'readyShown', after: 'levelCleared' }, tolerance: 'tick' },
+  { key: 'levelComplete.readyToResume', category: 'pause', scenario: 'levelComplete', from: { type: 'readyShown', after: 'levelCleared' }, to: { type: 'gameStarted', after: 'levelCleared' }, tolerance: 'tick' },
 ];
 
 // Values computed from event data rather than event times (see reduceTimeline).
@@ -40,7 +43,3 @@ export const COUNTS = [
 // Each sirenStep event n (1-based) yields siren.step<n>.pelletsRemaining and siren.step<n>.loopPeriod.
 // The movement-during-READY check (start.noMovementDuringReady) is a pause measurement.
 export const SIREN = { scenario: 'siren', type: 'sirenStep', category: 'presentation' };
-
-// Events the visualizer does not produce yet. Measurements that need one are
-// reported as "not implemented"; remove a type here once the visualizer emits it.
-export const GUI_NOT_IMPLEMENTED = new Set(['mazeFlash']);

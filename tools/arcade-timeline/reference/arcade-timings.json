@@ -74,8 +74,18 @@
     "unit": "s",
     "source": "MAME pacman, 2026-11-10"
   },
+  "levelComplete.flashPeriod": {
+    "value": 0.396,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
   "levelComplete.toReady": {
     "value": 3.927,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.readyToResume": {
+    "value": 1.8645,
     "unit": "s",
     "source": "MAME pacman, 2026-11-10"
   },
