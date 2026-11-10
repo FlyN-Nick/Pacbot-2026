@@ -1,5 +1,6 @@
 // The arcade's background siren: it rises in pitch and speeds up as pellets run out.
 // Synthesized with Web Audio; the pitches are a lookalike, the loop periods match the arcade.
+import { createSweepVoice } from './sweepVoice.js';
 
 /** Step n (1-based) starts when pellets remaining drop to `pellets`. */
 export const SIREN_STEPS = Object.freeze([
@@ -21,80 +22,25 @@ export function sirenShouldPlay({ active, paused, frightened, eyes, dying, ready
   return Boolean(active) && !paused && !frightened && !eyes && !dying && !ready;
 }
 
-const LOOKAHEAD_SECONDS = 2;
-const REFRESH_MS = 1000;
-const GAIN = 0.25;
-
 /** getAudio() returns { context, destination } or null while audio is unavailable. */
-export function createSiren({ getAudio, setRefresh = setInterval, clearRefresh = clearInterval }) {
+export function createSiren({ getAudio, setRefresh, clearRefresh }) {
   let step = 1;
-  let voice = null; // { context, oscillator, gain, refresh, scheduledUntil }
-
-  function audio() {
-    try { return getAudio(); } catch { return null; }
-  }
-
-  // Queue sweeps from `from` until LOOKAHEAD_SECONDS past now
-  function schedule(from) {
-    const { context, oscillator } = voice;
-    const { periodSeconds, low, high } = SIREN_STEPS[step - 1];
-    const frequency = oscillator.frequency;
-    let t = from;
-    frequency.setValueAtTime(low, t);
-    while (t < context.currentTime + LOOKAHEAD_SECONDS) {
-      frequency.linearRampToValueAtTime(high, t + periodSeconds / 2);
-      frequency.linearRampToValueAtTime(low, t + periodSeconds);
-      t += periodSeconds;
-    }
-    voice.scheduledUntil = t;
-  }
-
-  function start() {
-    if (voice) return;
-    const graph = audio();
-    if (!graph) return;
-    try {
-      const { context, destination } = graph;
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'triangle';
-      gain.gain.value = GAIN;
-      oscillator.connect(gain);
-      gain.connect(destination);
-      voice = { context, oscillator, gain, scheduledUntil: context.currentTime };
-      schedule(context.currentTime);
-      oscillator.start();
-      voice.refresh = setRefresh(() => { if (voice) schedule(voice.scheduledUntil); }, REFRESH_MS);
-    } catch {
-      voice = null;
-    }
-  }
-
-  function stop() {
-    if (!voice) return;
-    const { oscillator, gain, refresh } = voice;
-    voice = null;
-    clearRefresh(refresh);
-    try {
-      oscillator.stop();
-      oscillator.disconnect();
-      gain.disconnect();
-    } catch { /* Already stopped. */ }
-  }
-
-  function setStep(n) {
-    if (n === step) return;
-    step = n;
-    if (!voice) return;
-    voice.oscillator.frequency.cancelScheduledValues(voice.context.currentTime);
-    schedule(voice.context.currentTime);
-  }
+  const voice = createSweepVoice({ getAudio, gain: 0.25, setRefresh, clearRefresh });
+  const sweepFor = (n) => {
+    const { periodSeconds, low, high } = SIREN_STEPS[n - 1];
+    return { periodSeconds, low, high, shape: 'riseFall' };
+  };
+  voice.setSweep(sweepFor(step));
 
   return {
-    setStep,
-    start,
-    stop,
+    setStep(n) {
+      if (n === step) return;
+      step = n;
+      voice.setSweep(sweepFor(step));
+    },
+    start: voice.start,
+    stop: voice.stop,
     get step() { return step; },
-    get playing() { return voice !== null; },
+    get playing() { return voice.playing; },
   };
 }
