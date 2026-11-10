@@ -18,9 +18,15 @@ export const GAPS = [
   { key: 'ghostEaten.freeze', category: 'pause', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'actorMoved' }, tolerance: 'tick' },
   { key: 'ghostEaten.toFlash', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightFlashStart', flash: 1 }, tolerance: 'tick' },
   { key: 'ghostEaten.frightLength', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightEnded' }, tolerance: 'tick' },
-  { key: 'ghostEaten.eyesSoundLength', category: 'presentation', scenario: 'ghostEaten', from: { type: 'eyesSoundStarted' }, to: { type: 'eyesSoundEnded' }, tolerance: 'audio' },
   { key: 'levelComplete.toFirstFlash', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'mazeFlash', flash: 1 }, tolerance: 'animation' },
   { key: 'levelComplete.toReady', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'readyShown' }, tolerance: 'tick' },
+];
+
+// Values computed from event data rather than event times (see reduceTimeline).
+// Eyes speed doesn't depend on how far the eyes travel, unlike the eyes sound's length.
+export const DERIVED = [
+  { key: 'ghostEaten.eyesSpeed', category: 'presentation', scenario: 'ghostEaten', tolerance: 'relative', unit: 'tiles/s' },
+  { key: 'ghostEaten.eyesSoundPeriod', category: 'presentation', scenario: 'ghostEaten', tolerance: 'audio', unit: 's' },
 ];
 
 // How many events of a type occur in a scenario.
@@ -36,4 +42,4 @@ export const SIREN = { scenario: 'siren', type: 'sirenStep', category: 'presenta
 
 // Events the visualizer does not produce yet. Measurements that need one are
 // reported as "not implemented"; remove a type here once the visualizer emits it.
-export const GUI_NOT_IMPLEMENTED = new Set(['mazeFlash', 'eyesSoundStarted', 'eyesSoundEnded']);
+export const GUI_NOT_IMPLEMENTED = new Set(['mazeFlash']);

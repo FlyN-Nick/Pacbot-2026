@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { reduceTimeline } from './compare.mjs';
+import { reduceTimeline, formatValue } from './compare.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
@@ -117,7 +117,7 @@ function main() {
   const reduced = Object.assign({}, ...timelines.map(reduceTimeline));
   console.log('\nArcade measurements:');
   for (const [key, { value, unit }] of Object.entries(reduced)) {
-    console.log(`  ${key.padEnd(34)} ${unit === 'count' ? value : `${value.toFixed(3)}s`}`);
+    console.log(`  ${key.padEnd(34)} ${formatValue(value, unit)}`);
   }
 
   if (process.argv.includes('--write-reference') && missing.length) {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { freePort, createCleanup, startProcess, runWithTimeout } from './processes.mjs';
-import { compareTimelines, reduceTimeline, formatReport } from './compare.mjs';
+import { compareTimelines, reduceTimeline, formatReport, formatValue } from './compare.mjs';
 import { SCENARIOS } from './gui-scenarios.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -147,7 +147,7 @@ async function main() {
       console.log('\nNo reference yet (run `npm run record`). Measured GUI values:');
       for (const timeline of timelines) {
         for (const [key, { value, unit }] of Object.entries(reduceTimeline(timeline))) {
-          console.log(`  ${key.padEnd(34)} ${unit === 'count' ? value : `${value.toFixed(3)}s`}`);
+          console.log(`  ${key.padEnd(34)} ${formatValue(value, unit)}`);
         }
       }
     }

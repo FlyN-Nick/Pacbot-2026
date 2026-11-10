@@ -202,3 +202,46 @@ test('the GUI now produces siren steps', async () => {
   const { GUI_NOT_IMPLEMENTED } = await import('./gaps.mjs');
   assert.equal(GUI_NOT_IMPLEMENTED.has('sirenStep'), false);
 });
+
+test('relative tolerance is 5% of the target', () => {
+  assert.ok(Math.abs(toleranceFor('relative', 24, 20) - 1) < 1e-12);
+});
+
+test('eyes speed comes from the GUI eyes journey', () => {
+  const reduced = reduceTimeline(timeline('ghostEaten', [
+    { t: 0, type: 'ghostEaten' }, { t: 2.2, type: 'eyesTravelled', tiles: 20, seconds: 1.25 },
+  ]));
+  assert.equal(reduced['ghostEaten.eyesSpeed'].value, 16);
+  assert.equal(reduced['ghostEaten.eyesSpeed'].unit, 'tiles/s');
+});
+
+test('eyes speed comes from the arcade eyes journey', () => {
+  const reduced = reduceTimeline(timeline('ghostEaten', [
+    { t: 1, type: 'eyesStarted' }, { t: 3, type: 'eyesArrived', tiles: 30 },
+  ]));
+  assert.equal(reduced['ghostEaten.eyesSpeed'].value, 15);
+});
+
+test('the eyes sound period comes from the end of the eyes sound', () => {
+  const reduced = reduceTimeline(timeline('ghostEaten', [
+    { t: 1, type: 'eyesSoundStarted' }, { t: 2, type: 'eyesSoundEnded', periodSeconds: 0.14 },
+  ]));
+  assert.equal(reduced['ghostEaten.eyesSoundPeriod'].value, 0.14);
+});
+
+test('eyes speed passes within 5%', () => {
+  const reference = { 'ghostEaten.eyesSpeed': ref(16, 'tiles/s') };
+  const at = (speed) => compareTimelines({ reference, gameFps: 24, gui: [timeline('ghostEaten', [
+    { t: 0, type: 'eyesTravelled', tiles: speed, seconds: 1 },
+  ])] });
+  assert.equal(row(at(15.5), 'ghostEaten.eyesSpeed').status, 'pass');
+  assert.equal(row(at(14), 'ghostEaten.eyesSpeed').status, 'fail');
+});
+
+test('the eyes sound length row is replaced and the eyes events are implemented', async () => {
+  const rows = compareTimelines({ reference: {}, gui: [], gameFps: 24 });
+  assert.equal(row(rows, 'ghostEaten.eyesSoundLength'), undefined);
+  const { GUI_NOT_IMPLEMENTED } = await import('./gaps.mjs');
+  assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundStarted'), false);
+  assert.equal(GUI_NOT_IMPLEMENTED.has('eyesSoundEnded'), false);
+});
