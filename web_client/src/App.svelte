@@ -114,6 +114,11 @@
   let eyesFlightUntil = 0; // competition mode: the quick flight home
   let eyesFlightTimer;
   let runningKind = null;
+  // Level-complete state: walls white or blank, every actor hidden, pellets shown empty
+  let mazeFlashing = false;
+  let mazeBlank = false;
+  let allActorsHidden = false;
+  let levelFrozen = false;
   const siren = createSiren({ getAudio: () => audioController.getAudioGraph() });
   const eyesSound = createEyesSound({ getAudio: () => audioController.getAudioGraph(), periodMs: GUI_TIMINGS.eyesSoundPeriodMs });
   audioController.onStopAll(() => { siren.stop(); eyesSound.stop(); });
@@ -151,7 +156,9 @@
       active: activity.active, paused: frame.mode === Modes.Paused,
       frightened: false, eyes: false, dying, ready: readyVisible,
     });
-    const sound = soundForState({ eyes: running && eyesActive, frightened: activity.frightened, sirenAllowed });
+    // The level-complete sequence is silent, as in the arcade
+    const silent = levelFrozen || allActorsHidden;
+    const sound = silent ? null : soundForState({ eyes: running && eyesActive, frightened: activity.frightened, sirenAllowed });
     if (sound === 'eyes') eyesSound.start(); else eyesSound.stop();
     // Repeated calls are safe; they also restart after a priority jingle ends.
     if (sound === 'frightened') audioController.play('frightened', { loop: true });
@@ -185,6 +192,10 @@
     displayFrozen = false;
     frozenFrame = null;
     ghostsHidden = false;
+    mazeFlashing = false;
+    mazeBlank = false;
+    allActorsHidden = false;
+    levelFrozen = false;
     clearGhostEaten();
   }
 
@@ -285,6 +296,7 @@
       case 'releaseDisplay':
         displayFrozen = false;
         frozenFrame = null;
+        levelFrozen = false;
         break;
       case 'deathStart':
         deathEventId = ++deathCount;
@@ -299,12 +311,31 @@
         audioController.play(step.name);
         break;
       case 'hideActors':
-        hiddenGhosts = new Set([...hiddenGhosts, ...step.ghostIndexes]);
-        pacmanHidden = true;
+        if (step.all) {
+          allActorsHidden = true;
+        } else {
+          hiddenGhosts = new Set([...hiddenGhosts, ...step.ghostIndexes]);
+          pacmanHidden = true;
+        }
         break;
       case 'showActors':
-        pacmanHidden = false;
-        timeline.record('freezeEnded');
+        if (allActorsHidden) {
+          allActorsHidden = false;
+        } else {
+          pacmanHidden = false;
+          timeline.record('freezeEnded');
+        }
+        break;
+      case 'levelFreeze':
+        levelFrozen = true;
+        updateBackgroundSound();
+        break;
+      case 'mazeFlash':
+        mazeFlashing = step.white;
+        if (step.flash) timeline.record('mazeFlash', { flash: step.flash });
+        break;
+      case 'mazeBlank':
+        mazeBlank = step.blank;
         break;
       case 'showScore':
         scoresVisible = step.scores;
@@ -399,7 +430,12 @@
         runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
       }
       if (event.type === 'gameOver') audioController.stopAll();
-      if (event.type === 'levelChanged') timeline.anchor('levelCleared');
+      if (event.type === 'levelChanged') {
+        timeline.anchor('levelCleared');
+        clearGhostEaten();
+        catchFrame = latestFrame;
+        runSequence('levelComplete');
+      }
     }
     const eaten = events.filter(({ type }) => type === 'ghostEaten');
     if (eaten.length) {
@@ -900,6 +936,9 @@
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
 
+  // A cleared board, shown while the level-complete sequence is frozen
+  $: emptyPelletGrid = pelletGrid.map((row) => row.map(() => 0));
+
   // While a death is frozen, show everyone where Pac-Man was caught
   $: frozenPacman = displayFrozen ? frozenFrame?.pacman : null;
   $: frozenGhosts = displayFrozen ? frozenFrame?.ghosts : null;
@@ -1146,10 +1185,12 @@
 
   <Maze
     {gridSize}
+    flashing={mazeFlashing}
+    blank={mazeBlank}
   />
 
   <Pellets
-    {pelletGrid}
+    pelletGrid={levelFrozen ? emptyPelletGrid : pelletGrid}
     {gridSize}
     {botSocket}
     {intersectionGrid}
@@ -1166,7 +1207,7 @@
   />
 
   {#key effectsRevision}
-  {#if !pacmanHidden}
+  {#if !pacmanHidden && !allActorsHidden}
   <Pacman
     {gridSize}
     pacmanRowState={frozenPacman?.rowState ?? pacmanRowState}
@@ -1178,7 +1219,7 @@
   />
   {/if}
 
-  {#if !ghostsHidden}
+  {#if !ghostsHidden && !allActorsHidden}
   {#if numActiveGhosts >= 1 && !hiddenGhosts.has(0)}
     <Ghost
       {gridSize}
