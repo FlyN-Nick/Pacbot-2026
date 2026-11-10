@@ -36,7 +36,7 @@ export function isRomsetGood(output) {
 }
 
 // Event types the ghost-eating run contributes to the merged ghostEaten timeline
-const EAT_EVENTS = new Set(['ghostEaten', 'scorePopupShown', 'eyesSoundStarted', 'eyesSoundEnded', 'eyesStarted', 'eyesArrived']);
+const EAT_EVENTS = new Set(['ghostEaten', 'scorePopupShown', 'eyesSoundStarted', 'eyesSoundEnded', 'eyesStarted', 'eyesArrived', 'freezeEnded']);
 
 /**
  * Merge the fright-only run (full fright, flashes) and the ghost-eating run into

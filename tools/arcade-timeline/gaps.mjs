@@ -15,7 +15,8 @@ export const GAPS = [
   { key: 'death.endToReady', category: 'pause', scenario: 'death', from: { type: 'deathEnded' }, to: { type: 'readyShown', after: 'deathEnded' }, tolerance: 'tick' },
   { key: 'death.readyToResume', category: 'pause', scenario: 'death', from: { type: 'readyShown', after: 'deathEnded' }, to: { type: 'gameStarted', after: 'deathEnded' }, tolerance: 'tick' },
   { key: 'ghostEaten.toPopup', category: 'presentation', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'scorePopupShown' }, tolerance: 'animation' },
-  { key: 'ghostEaten.freeze', category: 'pause', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'actorMoved' }, tolerance: 'tick' },
+  // freezeEnded: the first movement after the eat (arcade), or when the GUI lets play continue
+  { key: 'ghostEaten.freeze', category: 'pause', scenario: 'ghostEaten', from: { type: 'ghostEaten' }, to: { type: 'freezeEnded' }, tolerance: 'tick' },
   { key: 'ghostEaten.toFlash', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightFlashStart', flash: 1 }, tolerance: 'tick' },
   { key: 'ghostEaten.frightLength', category: 'server', scenario: 'ghostEaten', from: { type: 'frightStarted' }, to: { type: 'frightEnded' }, tolerance: 'tick' },
   { key: 'levelComplete.toFirstFlash', category: 'pause', scenario: 'levelComplete', from: { type: 'levelCleared' }, to: { type: 'mazeFlash', flash: 1 }, tolerance: 'animation' },

@@ -311,6 +311,7 @@
         break;
       case 'showActors':
         pacmanHidden = false;
+        timeline.record('freezeEnded');
         break;
       case 'showScore':
         scoresVisible = step.scores;
@@ -418,6 +419,8 @@
         runSequence('ghostEaten', { ghosts });
       }
       if (!arcade) {
+        // Competition mode never freezes the game
+        timeline.record('freezeEnded');
         for (const event of eaten) ghostReturnEvents[event.ghostIndex] = event;
         startEyesFlight();
       }

@@ -161,6 +161,8 @@ subscription = emu.add_machine_frame_notifier(function()
       local key = actor.name
       local nowMoving = prev[key] ~= nil and position ~= prev[key]
       if nowMoving and not moving[key] then emit("actorMoved", { actor = actor.name }) end
+      local eatenAt = seen("ghostEaten")
+      if nowMoving and eatenAt and frame > eatenAt and not seen("freezeEnded") then emit("freezeEnded") end
       moving[key] = nowMoving
       prev[key] = position
     end

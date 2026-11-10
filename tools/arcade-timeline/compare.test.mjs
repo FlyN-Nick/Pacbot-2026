@@ -251,3 +251,10 @@ test('eyes speed does not apply in competition mode, which keeps the quick fligh
   const rows = compareTimelines({ reference, gameFps: 24, mode: 'competition', gui: [timeline('ghostEaten', [])] });
   assert.equal(row(rows, 'ghostEaten.eyesSpeed').status, 'not applicable');
 });
+
+test('the ghost freeze ends at freezeEnded, not at the move that made the catch', () => {
+  const reduced = reduceTimeline(timeline('ghostEaten', [
+    { t: 0, type: 'ghostEaten' }, { t: 0, type: 'actorMoved', actor: 'pacman' }, { t: 0.94, type: 'freezeEnded' },
+  ]));
+  assert.ok(Math.abs(reduced['ghostEaten.freeze'].value - 0.94) < 1e-9);
+});
