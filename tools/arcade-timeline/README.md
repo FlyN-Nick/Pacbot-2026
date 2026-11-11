@@ -79,3 +79,45 @@ Pause investigation checks:
 - `node reload-pause-browser.mjs` checks that refreshing during an active READY hold releases the abandoned pause, while refreshing a manual pause preserves it. The same cleanup runs when the development app is destroyed by hot reload.
 
 `node hud-controls-browser.mjs` checks the shared arcade HUD and bitmap controls in both modes at narrow and short viewport sizes. Natural-death checks also assert that the death animation stays at the captured pre-respawn position.
+
+## Painted sequence references (v2)
+
+```sh
+PACMAN_ROM_DIR=~/roms npm run record:sequences -- --scope initial --out /tmp/sequence-reference
+PACMAN_ROM_DIR=~/roms npm run record:sequences -- --scope full --out /tmp/sequence-reference-full
+```
+
+The output directory must be empty. The recorder verifies the external `pacman` ROM set and requires the measured MAME 0.289 callback behavior. It records READY → initial movement and a natural, untouched-joystick collision away from spawn → death → next-life READY → movement. There are no gameplay-memory writes in these scenarios. The legacy timeline and v1 capture commands retain their behavior; per-frame recording is opt-in through `ARCADE_SEQUENCE_DIR`.
+
+`index.json` is `{version:2,scope,sequences:[{checkId,status,manifest?,reason?}],context:[]}`. Status is `recorded`, `unavailable`, or `incomplete`, never a comparison result. Initial scope lists all eight inventory definitions: two full-screen recordings and six explicitly unavailable live producers. Full scope lists all 108 definitions; only the two initial full-screen producers are implemented here. Exit 0 means **requested renderer recording complete**, not validation passed. Live/compositing placeholders are outside this recorder's exit denominator; missing full-screen/artwork producers in full scope cause exit 1. Missing dependencies and incomplete captures also exit 1.
+
+All paths in manifests, evidence, and calibration files are relative to the directory containing `index.json`, including paths in a nested `start/manifest.json` or `death/manifest.json`. Each scenario retains:
+
+- `raw/fNNNNNN.png` and `.json`: every frame from recorder frame 400 until completion, with full native 224 × 288 screenshots and both machine-notifier and frame-done state observations.
+- `manifest.json`: the selected dense sequence and unchanged opaque `paintedState` snapshots, with IDs `fNNNNNN`. `emulatedFrame` is the recorder's machine-callback count; `paintedFrame` is `screen:frame_number()` at frame-done. `event` is the scenario name; `offsetFrames` is relative to the selected READY or death-catch anchor.
+- `provenance.checkpoints`: inventory checkpoint ID → `{sampleIds,firstFrame,lastFrame}`. IDs may overlap between checkpoint groups. An `all-observed` checkpoint lists **every** frame in its inclusive interval; it is not one representative image. Consumers must verify this mapping in addition to matching samples. `validateCheckpointCoverage` checks dense intervals plus complete initial mouth/death transitions.
+- `evidence/fNNNNNN.json`: hashes binding the PNG/raw observation, pixel-derived yellow bounds, and the retained callback calibration. `paint-calibration.json` references at least four moving closed-pose PNG/raw pairs whose pixel bounds agree with frame-done registers and reject the preceding machine-notifier registers. `validateRecordedSequence(root, manifest, definition)` recomputes those observations and hashes, validates provenance artifacts and checks complete checkpoint mapping. This is empirical callback association, not an independent emulator of every pixel or a renderer comparison.
+- `command.json`, `mame.log`, `raw/events.json`, and `raw/timeline.json`: invocation, explicit coin/start inputs, emulator diagnostics, raw-frame events, and the unchanged timing format. Root `environment.json` retains version and ROM verification. `contact-sheet.png` plus its ordered JSON frame index show checkpoint boundaries and art transitions with neighbors; screenshots themselves have no annotation or excluded regions.
+
+Initial mapping observed with the recorded command (future recordings derive anchors from state rather than fixed frame numbers):
+
+| Check | Checkpoint | Inclusive recorder frames |
+|---|---|---|
+| ready-movement | ready-visible / before-release / first-movement | 544 / 661 / 662 |
+| ready-movement | mouth-cycle, all-observed | 661–694 (34 samples) |
+| death-respawn | death-catch / initial-hold | 1373 / 1374–1433 |
+| death-respawn | death-art-transitions, all-observed | 1433–1548 (116 samples, preceding hold through two blank frames) |
+| death-respawn | blank / next-life-ready / first-movement | 1547–1548 / 1603 / 1719 |
+
+Selected manifests include all frames 542–694 and 1370–1735, respectively, including surrounding frames outside checkpoint groups. Initial movement completion retains multiple mouth cycles. Death recording retains the whole hold, every art change, blank interval, intervening board redraw, next READY and movement. The natural catch's logical actor position is `(196,188)` versus spawn `(196,128)`; its hardware top-left is `(45,204)` versus spawn `(105,204)`.
+
+The opaque state schema `mame-pacman-raw-v1` contains `videoRam[1024]` (0x4000–43ff), `colorRam[1024]` (0x4400–47ff), `spriteAttributes[16]` (0x4ff0–4fff), write-tapped `spriteCoordinates[16]` (0x5060–506f), write-tapped `flipScreen`, `actorRam[10]` (0x4d00–4d09), `mainState`, `subState`, `deathAnimation`, `lives`, `readyTile`, `pelletsEaten`, `scoreBytes[4]` (0x4e80–83), `highScoreBytes[4]` (0x4e88–8b), `levelByte` (0x4e13), and explicit `unavailable` reasons. All arrays are address-ascending, zero-based when accessed in JavaScript. Raw observation files additionally retain `{frame,screenFrame,machineScreenFrame,machineState,paintedState,image}`. These are RAM/ports only; no ROM bytes are exported.
+
+Measured geometry and field limits:
+
+- `screen:snapshot` is already upright/native. For sprite slot `s`, top-left is `x = 240 - coordinates[2*s] - (s <= 2 ? 1 : 0)`, `y = 272 - coordinates[2*s+1]`. Slots 1..5 in these initial runs are red/pink/cyan/orange/yellow with color bytes 1/3/5/7/9. Slots can reorder elsewhere. Sprite code is `attribute >> 2`; low bits are pre-rotation flips. At frame 550 the first five positions are `(105,108)`, `(105,132)`, `(89,132)`, `(121,132)`, `(105,204)`.
+- The machine notifier precedes paint. At recorder frame 662 it sees the previous hardware position; frame-done sees port pair `(136,68)` and PNG yellow bounds `(105,205)..(117,217)`, 137 pixels. Logical actor RAM already reads `(196,130)` and must not substitute for painted coordinates. No universal logical-to-painted per-actor shift is inferred.
+- Initial left movement uses attributes 194/186/178/186/194 (codes 48/46/44/46/48). Closed code 48 is observed through READY. Death uses attributes 208 through 248 in increments of four (codes 52..62), then attribute 252/code 63, which paints blank. These initial scenarios do not verify every direction, frightened/eyes pose, or general sprite visibility; raw flips, clipping coordinates and PNGs are preserved instead of invented semantic flags.
+- Score/high-score first bytes were observed as hex 00,10,20,…,70 with painted 00,10,20,…,70, changing at frames 668,677,…,722. Higher-score digits and the fourth raw byte remain unclassified. Lives changes 3→2 at frame 1593, while the footer updates later; use retained video/color RAM to describe displayed icons. `levelByte=0` and the cherry icon were observed on the first board only. Later-level and fruit-history progression remain unavailable. READY, pellet removal, HUD glyphs and all screen tiles remain in the full video/color arrays.
+
+These observations combine actual adjacent captures with the official [MAME 0.289 video implementation](https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman_v.cpp), [memory/port declarations](https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman.cpp), and [screen API documentation](https://docs.mamedev.org/luascript/ref-devices.html). ROM verification alone does not establish paint alignment. Raw state remains unchanged for later sample matching; canonical browser adapter inputs belong in separate provenance.

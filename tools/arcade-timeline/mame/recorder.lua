@@ -33,11 +33,13 @@ end
 
 local frame = 0
 local events = {}
+local visual
 local captureDir = os.getenv("ARCADE_CAPTURE_DIR")
 local captureIndex = 0
 local captureQueue = {}
 local captureOffsets = {readyShown = {30}, gameStarted = {1, 8, 16}, deathFrame = {0}, frightStarted = {15, 30}, frightFlashStart = {0}, eyesStarted = {5}}
 local function emit(type, data)
+  if visual then visual.event(type, data) end
   events[#events + 1] = { frame = frame, type = type, data = data or {} }
   if captureDir and captureOffsets[type] then
     for _, offset in ipairs(captureOffsets[type]) do
@@ -115,7 +117,10 @@ local function json(value)
   return "null"
 end
 
+visual = dofile("visual-state.lua")(map, mem, json, function() return frame end)
+
 local function finish()
+  if visual then visual.close() end
   for _, step in ipairs(sirenSteps) do
     emit("sirenStep", { pelletsRemaining = step.pelletsRemaining, periodSeconds = loopPeriodSeconds(step.samples) })
     events[#events].frame = step.frame
@@ -149,6 +154,7 @@ local plantsPowerPellet = scenario == "fright" or scenario == "ghostEaten"
 
 subscription = emu.add_machine_frame_notifier(function()
   frame = frame + 1
+  if visual then visual.machineFrame() end
   if frame == COIN_FRAME then press(":IN0", "Coin 1", true) end
   if frame == COIN_FRAME + 6 then press(":IN0", "Coin 1", false) end
   if frame == START_FRAME then press(":IN1", "1 Player Start", true) end
@@ -310,7 +316,7 @@ subscription = emu.add_machine_frame_notifier(function()
     -- Play resumes (gameStarted) after the READY that follows the death
     local ready = lastSeen("readyShown")
     local resumed = ended and ready and ready > ended and (lastSeen("gameStarted") or 0) > ready
-    done = ended and (resumed or frame > ended + 900)
+    done = ended and ((resumed and (not visual or frame >= lastSeen("gameStarted") + 60)) or frame > ended + 900)
   elseif scenario == "fright" then
     local ended = seen("frightEnded")
     done = (ended and frame > ended + 30) or seen("pacmanCaught")

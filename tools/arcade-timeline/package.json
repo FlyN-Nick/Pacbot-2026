@@ -10,6 +10,7 @@
   "scripts": {
     "test": "node --test",
     "record": "node record.mjs",
+    "record:sequences": "node record-sequences.mjs",
     "compare": "node run.mjs",
     "capture": "node capture.mjs",
     "compare:visual": "node visual-compare.mjs"
