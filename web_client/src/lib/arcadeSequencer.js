@@ -161,3 +161,20 @@ export function createSequenceRunner({ execute, getMode, setTimer = setTimeout, 
     get running() { return timers.length > 0; },
   };
 }
+
+// Transfer a canceled arcade plan's resume obligation to a single acknowledged
+// pause. Natural death/level-clear can send their pause on the next wire update.
+export function createModeChangeRelease() {
+  let pending = false;
+  return {
+    capture({ mode, running, pendingResume, socketOpen }) {
+      pending ||= mode === 'arcade' && running && pendingResume && socketOpen;
+    },
+    consume({ paused, socketOpen }) {
+      if (!pending || !paused || !socketOpen) return false;
+      pending = false;
+      return true;
+    },
+    cancel() { pending = false; },
+  };
+}

@@ -239,3 +239,25 @@ test('the level plan shows every actor explicitly', () => {
   const show = levelPlan('arcade').find((s) => s.action === 'showActors');
   assert.deepEqual(show, step(3927, 'showActors', { all: true }));
 });
+
+const modeRelease=async()=>{
+ const module=await import('./arcadeSequencer.js');assert.equal(typeof module.createModeChangeRelease,'function');return module.createModeChangeRelease();
+};
+test('switching an owned arcade sequence releases its acknowledged pause exactly once',async()=>{
+ const release=await modeRelease();release.capture({mode:'arcade',running:true,pendingResume:true,socketOpen:true});
+ assert.equal(release.consume({paused:true,socketOpen:true}),true);assert.equal(release.consume({paused:true,socketOpen:true}),false);
+});
+test('a pause acknowledgment after the mode switch consumes the pending release',async()=>{
+ const release=await modeRelease();release.capture({mode:'arcade',running:true,pendingResume:true,socketOpen:true});
+ assert.equal(release.consume({paused:false,socketOpen:true}),false);assert.equal(release.consume({paused:true,socketOpen:true}),true);
+});
+test('manual pause, last-life, competition and disconnected sequences never acquire resume ownership',async()=>{
+ const defaults={mode:'arcade',running:true,pendingResume:true,socketOpen:true};
+ for(const override of [{running:false},{pendingResume:false},{mode:'competition'},{socketOpen:false}]) {
+  const release=await modeRelease();release.capture({...defaults,...override});assert.equal(release.consume({paused:true,socketOpen:true}),false);
+ }
+});
+test('an explicit stop or reset cancels a pending mode-change release',async()=>{
+ const release=await modeRelease();release.capture({mode:'arcade',running:true,pendingResume:true,socketOpen:true});release.cancel();
+ assert.equal(release.consume({paused:true,socketOpen:true}),false);
+});

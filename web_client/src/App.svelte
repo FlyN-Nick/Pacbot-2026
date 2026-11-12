@@ -62,7 +62,7 @@
   // A cleared board, shown while the level-complete sequence is frozen
   const emptyPelletGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
-  import { planSequence, createSequenceRunner, resumedElsewhere } from './lib/arcadeSequencer.js';
+  import { planSequence, createSequenceRunner, resumedElsewhere, createModeChangeRelease } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
   import { createEyesSound } from './lib/eyesSound.js';
   import { soundForState } from './lib/ghostEyes.js';
@@ -132,6 +132,7 @@
   let eyesFlightTimer;
   let runningKind = null;
   let pendingSequenceResume = false;
+  const modeChangeRelease = createModeChangeRelease();
   let pageHidden = document.hidden;
   function onVisibilityChange() {
     pageHidden = document.hidden;
@@ -152,6 +153,7 @@
   let pickedFruits = {};
 
   function clearGameEffects() {
+    modeChangeRelease.cancel();
     eventTracker.reset();
     latestFrame = null;
     visualEvents = [];
@@ -406,6 +408,7 @@
   // A pause or resume from a person or the bot client; it always wins over a sequence
   function sendControl(control,source='manual') {
     pauseTrace.record('controlRequested',{control,source,sequence:currentKind()});
+    modeChangeRelease.cancel();
     if(source==='manual'||control==='p')pendingBotRestart=false;
     if (control === 'P' && canRequestStart()) {
       startRequested = true;
@@ -420,6 +423,8 @@
 
   function changeMode(mode) {
     pauseTrace.record('modeChanged',{from:$visualizerMode,to:mode,sequence:currentKind()});
+    modeChangeRelease.capture({mode:$visualizerMode,running:runner.running,pendingResume:pendingSequenceResume,socketOpen});
+    pendingSequenceResume=false;
     // Show the mode in the address bar without adding a history entry
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, '', pathname + searchWithMode(search, mode) + hash);
@@ -429,8 +434,13 @@
     runner.cancel();
     clearSequenceDisplay();
     if (deathPending) executeStep({ action: 'deathStart' });
+    releaseModeChangePause(gameMode);
     // A start sequence cut short leaves the next start free to show READY
     if (!sessionStarted) startRequested = false;
+  }
+
+  function releaseModeChangePause(mode) {
+    if(modeChangeRelease.consume({paused:mode===Modes.Paused,socketOpen}))sendToSocket('P','mode change');
   }
 
   const popcount = (n) => { let count = 0; for (let v = n >>> 0; v; v &= v - 1) count++; return count; };
@@ -531,6 +541,7 @@
     }
     ghostReturnEvents = ghostReturnEvents;
     latestFrame = frame;
+    releaseModeChangePause(frame.mode);
     const actions = getEventActions(events);
     visualEvents = actions.visualEvents;
     for (const { name, event } of actions.audioCues) {
@@ -1203,6 +1214,7 @@
   }
 
   const toggleReset = () => {
+    modeChangeRelease.cancel();
     pendingBotRestart=false;
     // A reset always wins over a running arcade sequence
     runner.cancel();
