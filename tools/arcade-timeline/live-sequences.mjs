@@ -37,6 +37,12 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
  const initial=rows.filter(r=>start&&r.at>=start.at&&r.at<(pursuit?.at??collision?.at??Infinity));
  const death=rows.filter(r=>collision&&r.at>=collision.at);
  const commands=(from,to=Infinity)=>events.filter(e=>e.type==='command'&&e.at>=from&&e.at<to);
+ // Neighboring callbacks make a missing first/last hold observation detectable,
+ // as well as interior gaps. The released frame may legitimately move.
+ const holdCoverage=(from,to)=>{
+  const before=rows.findLast(r=>r.at<from),after=rows.find(r=>r.at>=to);
+  return before&&after?[before,...rows.filter(r=>r.at>=from&&r.at<to),after]:[];
+ };
  return requiredChecks(scope).filter(d=>d.category==='live'&&d.mode===mode).map(definition=>{
   const found=new Map();
   function put(id,status,reason,selected=[],policy) {found.set(id,{id,status,reason,observationIds:ids(selected),...(policy?{policy}:{})});}
@@ -58,7 +64,11 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
     const release=commands(start?.at??Infinity,pursuit?.at).find(e=>e.command==='P'&&e.source?.startsWith('sequence:'));
     const held=initial.filter(r=>r.at<(release?.at??Infinity));
     if(!release)missing('before-release','No observed arcade hold release.',held);
-    else if(held.length>1)verify('before-release',!moved(held)&&!progressed(held),'Arcade READY holds received ticks and painted position until its observed release.',held);
+    else {
+     const coverage=holdCoverage(start.at,release.at);
+     if(held.length<2||!dense(coverage))missing('before-release','Missing observer callbacks across arcade READY hold or its boundaries.',coverage);
+     else verify('before-release',!moved(held)&&!progressed(held),'Arcade READY holds received ticks and painted position until its observed release.',coverage);
+    }
    } else if(firstMove&&progressed(initial))verify('before-release',!commands(start.at,pursuit?.at).some(e=>['p','P'].includes(e.command)&&e.source?.startsWith('sequence:')),'Competition progresses without presentation hold/resume commands.',initial,'No arcade hold required; positive server progression required.');
    if(firstMove) {
     const lastMove=initial.findLast((r,i)=>i>0&&visible(r)&&visible(initial[i-1])&&xy(r)!==xy(initial[i-1]));
@@ -78,7 +88,11 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
    const artwork=death.filter(r=>r.render.frame?.startsWith('death-'));
    const blank=death.find(r=>r.render.frame==='blank');
    const hold=death.filter(r=>r.at<(deathStart?.at??Infinity));
-   if(mode==='arcade'&&deathStart&&hold.length>1)verify('initial-hold',!moved(hold),'Caught artwork remains at its captured location during arcade initial freeze.',hold);
+   if(mode==='arcade'&&deathStart) {
+    const coverage=holdCoverage(collision.at,deathStart.at);
+    if(hold.length<2||!dense(coverage))missing('initial-hold','Missing observer callbacks across initial death hold or its boundaries.',coverage);
+    else verify('initial-hold',!moved(hold),'Caught artwork remains stationary during arcade initial freeze.',coverage);
+   }
    if(mode==='competition'&&progressed(death))verify('initial-hold',!commands(collision.at).some(e=>['p','P'].includes(e.command)&&e.source?.startsWith('sequence:')),'Competition has no presentation hold; observed server ticks progress.',death,'Server-owned death pause allowed; resumption must originate from driver/user, not presentation.');
    if(blank)put('blank','pass','Blank artwork actually observed after death animation.',[blank]);
    const animation=death.filter(r=>deathStart&&blank&&r.at>=deathStart.at&&r.at<=blank.at);
@@ -93,8 +107,11 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
    if(mode==='arcade'&&next&&!commands(collision.at).some(e=>e.command==='P'&&e.source==='sequence:death'))missing('first-movement','Arcade next-life hold lacks its observed release.',[next]);
    const p=collision.previous?.pacman;
    const expectedPosition=p?{x:((p.colState&31)+.5)*8,y:((p.rowState&31)+.5)*8}:null;
-   if(!expectedPosition||expectedPosition.x===SPAWN.x&&expectedPosition.y===SPAWN.y)missing('captured-death-position','Natural death must be demonstrably away from spawn.',artwork);
-   else if(artwork.length)verify('captured-death-position',artwork.every(r=>r.render.x===expectedPosition.x&&r.render.y===expectedPosition.y),'Death stays at the last received pre-loss position (exact collision position unknown).',artwork);
+   // Include the caught freeze and initial upward pose, not just numbered art.
+   // Stop at blank so the legitimate next-life spawn is outside this interval.
+   const positionRows=death.filter(r=>visible(r)&&r.at<=(blank?.at??artwork.at(-1)?.at));
+   if(!expectedPosition||expectedPosition.x===SPAWN.x&&expectedPosition.y===SPAWN.y)missing('captured-death-position','Natural death must be demonstrably away from spawn.',positionRows);
+   else if(positionRows.length)verify('captured-death-position',positionRows.every(r=>r.render.x===expectedPosition.x&&r.render.y===expectedPosition.y),'Every visible caught/death pose stays at the last received pre-loss position through blank (exact collision position unknown).',positionRows);
    if(death.length)verify('death-audio-start',events.some(e=>e.type==='audio-start'&&e.name==='death'&&e.at>=collision.at),'An actual death audio source started; scheduled events do not count.',death.slice(0,1));
    if(commands(0).length)put('command-origin','pass','Driver and presentation commands retained, including collision pursuit.',death.slice(0,1));
   }

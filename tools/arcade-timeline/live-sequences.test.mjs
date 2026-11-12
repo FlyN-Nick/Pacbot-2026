@@ -8,11 +8,11 @@ function trace(mode='arcade') {
  const add=(at,frame,x=108,y=188,ready=false,lives=3,tick=0,kind=null)=>rows.push({id:`r${rows.length}`,raf:rows.length+1,at,server:{tick,mode:tick?1:0,lives,pacman:position(y/8-.5,x/8-.5)},render:{frame,x,y,ready,ghosts:[]},presentation:{kind}});
  add(0,'pacman-left-2');add(20,'pacman-left-2');
  events.push({at:30,type:'driver',name:'start'},{at:30,type:'command',command:'P',source:'manual'},{at:35,type:'audio-start',name:'intro'});
- add(40,'pacman-left-2',108,188,true);add(60,'pacman-left-2',108,188,true);
+ add(40,'pacman-left-2',108,188,true);add(50,'pacman-left-2',108,188,true);add(60,'pacman-left-2',108,188,true);
  if(mode==='arcade') events.push({at:70,type:'command',command:'P',source:'sequence:start'});
  for(let i=0;i<9;i++)add(80+i*30,`pacman-left-${[2,1,0,1,2,1,0,1,2][i]}`,100-i*8,188,mode==='competition',3,i+1);
  events.push({at:360,type:'driver',name:'pursuit'},{at:400,type:'collision',previous:{pacman:position(11,9)},received:{pacman:position(32,32)},uncertainty:'last received position; exact collision unavailable'});
- add(400,'pacman-left-2',76,92,false,2,10,'death');add(420,'pacman-left-2',76,92,false,2,10,'death');
+ add(400,'pacman-left-2',76,92,false,2,10,'death');add(410,'pacman-left-2',76,92,false,2,10,'death');add(420,'pacman-left-2',76,92,false,2,10,'death');
  events.push({at:440,type:'audio-start',name:'death'});
  add(440,'pacman-up-0',76,92,false,2,10,'death');
  for(let i=0;i<11;i++)add(460+i*20,`death-${i}`,76,92,false,2,mode==='arcade'?10:11+i,'death');
@@ -68,4 +68,25 @@ test('an animated stationary tail cannot supply a mouth cycle for preceding move
  const t=trace();const moving=t.rows.filter(r=>r.at>=80&&r.at<360);
  for(const r of moving)r.render.x=100;
  assert.notEqual(checkpoint(await check(t,'ready-movement'),'mouth-cycle').status,'pass');
+});
+
+for(const [name,select] of [
+ ['caught hold',r=>r.at>=400&&r.at<440],
+ ['initial upward pose',r=>r.render.frame==='pacman-up-0'],
+ ['caught hold and initial upward pose',r=>r.at>=400&&r.at<=440],
+])test(`teleport during ${name} fails even when numbered death artwork returns`,async()=>{
+ const t=trace();for(const r of t.rows.filter(select))Object.assign(r.render,{x:108,y:188});
+ assert.equal(checkpoint(await check(t,'death-respawn'),'captured-death-position').status,'fail');
+});
+
+for(const [scenario,id,holdTimes] of [
+ ['ready-movement','before-release',[40,50,60]],
+ ['death-respawn','initial-hold',[400,410,420]],
+])for(const [name,remove] of [
+ ['interior',[holdTimes[1]]],
+ ['first boundary',[holdTimes[0]]],
+ ['last boundary',[holdTimes[2]]],
+])test(`${id} rejects missing ${name} observer coverage`,async()=>{
+ const t=trace();t.rows=t.rows.filter(r=>!remove.includes(r.at));
+ assert.equal(checkpoint(await check(t,scenario),id).status,'incomplete');
 });
