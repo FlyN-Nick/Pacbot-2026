@@ -63,6 +63,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 	                    help='Suppress sending location updates to the game server (for physical competition use)')
 	parser.add_argument('--force_no_bot', action='store_true',
 	                    help='Skip robot socket connection (simulate without physical bot)')
+	parser.add_argument('--log-speed', metavar='CSV', default=None,
+	                    help='Record the game ticks Pacman takes per cell to this file '
+	                    '(summarize with: python speedLogger.py summarize CSV)')
 	args = parser.parse_args(argv)
 	if args.strategy in ('dqn', 'hybrid') and not args.checkpoint:
 		parser.error(f'--checkpoint is required when --strategy={args.strategy}')
@@ -112,6 +115,12 @@ class PacbotClient:
 		# timestamp of last game over
 		self.last_game_over_time = time()
 
+		# Optional record of how fast Pacman moves (see speedLogger.py)
+		self.speedLogger = None
+		if args.log_speed:
+			from speedLogger import SpeedLogger
+			self.speedLogger = SpeedLogger(args.log_speed)
+
 	async def run(self) -> None:
 		'''
 		Connect to the server, then run
@@ -158,6 +167,11 @@ class PacbotClient:
 		if self._socketOpen:
 			self.connection.close()
 		self._socketOpen = False
+		if self.speedLogger is not None:
+			self.speedLogger.close()
+			from speedLogger import moves, summarize
+			summarize(moves(self.speedLogger.events))
+			self.speedLogger = None
 		self.state.setConnectionStatus(False)
 
 	# Return whether the connection is open
@@ -189,6 +203,10 @@ class PacbotClient:
 					messageBytes = message # type: ignore
 				else:
 					messageBytes = message.encode('ascii') # type: ignore
+
+				# Recorded before the state update, which skips messages while the state is locked
+				if self.speedLogger is not None:
+					self.speedLogger.observe(messageBytes)
 
 				# Update the state, given this message from the server
 				should_resume = self.state.update(messageBytes)
