@@ -34,11 +34,11 @@ export async function launchBrowser() {
 }
 
 // The game server reads ../config.json, so give it its own folder and config.
-export async function startGameServer(tmp, cleanup) {
-  const wsPort = await freePort();
-  const tcpPort = await freePort();
+export async function startGameServer(tmp, cleanup, gameConfig = {}) {
+  const wsPort = gameConfig.WebSocketPort ?? await freePort();
+  const tcpPort = gameConfig.TcpPort ?? await freePort();
   const config = JSON.parse(fs.readFileSync(path.join(repo, 'config.json'), 'utf8'));
-  fs.writeFileSync(path.join(tmp, 'config.json'), JSON.stringify({ ...config, WebSocketPort: wsPort, TcpPort: tcpPort }));
+  fs.writeFileSync(path.join(tmp, 'config.json'), JSON.stringify({ ...config, ...gameConfig, WebSocketPort: wsPort, TcpPort: tcpPort }));
   const serverDir = path.join(tmp, 'server');
   fs.mkdirSync(serverDir);
   const binary = path.join(serverDir, 'pacbot_server');

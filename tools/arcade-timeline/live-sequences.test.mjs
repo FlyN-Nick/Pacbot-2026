@@ -90,3 +90,53 @@ for(const [scenario,id,holdTimes] of [
  const t=trace();t.rows=t.rows.filter(r=>!remove.includes(r.at));
  assert.equal(checkpoint(await check(t,scenario),id).status,'incomplete');
 });
+
+function raceTrace(scenario='mode-change-ready',mode='arcade') {
+ const rows=[0,20,40,60,80].map((at,i)=>({id:`r${i}`,raf:i+1,at,server:{mode:i<2?0:1,tick:i<2?0:i,lives:3},presentation:{kind:i<2?'start':null,dying:false},render:{frame:'pacman-left-2',x:108-i*8,y:188,ready:i<2}}));
+ return {scenario,mode,targetMode:mode==='arcade'?'competition':'arcade',rows,events:[{type:'driver',name:'race-action',at:30,command:'mode-change'},{type:'command',source:'mode change',command:'P',at:32}],endAt:100,endRaf:5,deadline:90};
+}
+test('mode change cannot pass when canceling an owned hold strands the server',async()=>{
+ const m=await modulePromise;assert.equal(typeof m.evaluateRaceTrace,'function');const t=raceTrace();for(const r of t.rows){r.server.mode=0;r.server.tick=0;}
+ assert.equal(m.evaluateRaceTrace(t).checkpoints.find(c=>c.id==='painted-continuation').status,'fail');
+});
+test('mode change requires command evidence, cancellation and actual painted progression',async()=>{
+ const m=await modulePromise;assert.equal(typeof m.evaluateRaceTrace,'function');const t=raceTrace();assert.equal(m.evaluateRaceTrace(t).status,'pass');
+ t.events.push({type:'command',source:'sequence:start',command:'P',at:95});assert.equal(m.evaluateRaceTrace(t).status,'fail');
+});
+test('stop and manual pause require complete bounded observations and no automatic resume',async()=>{
+ const m=await modulePromise;assert.equal(typeof m.evaluateRaceTrace,'function');const t=raceTrace('explicit-stop');t.events[0].command='reset-and-stop';t.events[1]={at:32,type:'command',source:'bot',command:'p'};
+ for(const r of t.rows.slice(2)){r.server.mode=0;r.server.tick=0;r.render.x=108;}
+ assert.equal(m.evaluateRaceTrace(t).status,'pass');t.rows.splice(3,1);assert.equal(m.evaluateRaceTrace(t).status,'incomplete');
+});
+test('competition shared hold label needs active phase plus positive progression and no sequence hold',async()=>{
+ const m=await modulePromise;assert.equal(typeof m.evaluateRaceTrace,'function');const t=raceTrace('bot-resume','competition');
+ t.events[0].command='resume_game';t.events[1].source='bot';for(const r of t.rows.slice(0,2)){r.server.mode=1;r.server.tick=r.raf;r.presentation.kind=null;r.presentation.dying=true;}
+ assert.equal(m.evaluateRaceTrace(t).checkpoints.find(c=>c.id==='hold-active').status,'pass');t.rows[1].server.tick=t.rows[0].server.tick;
+ assert.notEqual(m.evaluateRaceTrace(t).checkpoints.find(c=>c.id==='hold-active').status,'pass');
+});
+
+test('manual-pause absence assertion starts at the actual pause acknowledgment',async()=>{
+ const m=await modulePromise,t=raceTrace('manual-pause');t.events[0].command='manual-pause';t.events[1]={at:32,type:'command',source:'manual',command:'p'};
+ t.rows[2].server.mode=1;for(const r of t.rows.slice(3))r.server.mode=0;
+ assert.equal(m.evaluateRaceTrace(t).status,'pass');t.rows[4].server.mode=1;assert.equal(m.evaluateRaceTrace(t).status,'fail');
+});
+
+test('expanded producer results replace only matching checks and cannot shrink the inventory',async()=>{
+ const m=await modulePromise;assert.equal(typeof m.mergeLiveResults,'function');
+ const base=m.evaluateLiveTrace(trace(),{scope:'full',mode:'arcade'}),replacement={...base.find(c=>c.scenario==='bot-reset'),status:'pass'};
+ const merged=m.mergeLiveResults(base,[replacement]);assert.equal(merged.length,base.length);assert.equal(merged.find(c=>c.scenario==='bot-reset').status,'pass');assert.equal(merged.find(c=>c.scenario==='level-completion').status,'incomplete');
+ assert.throws(()=>m.mergeLiveResults(base,[{checkId:'live:not-in-inventory'}]),/inventory/);
+});
+
+for(const boundary of ['first','last'])test(`stop absence assertion rejects a missing ${boundary} observer boundary`,async()=>{
+ const m=await modulePromise,t=raceTrace('explicit-stop');t.endRaf=5;t.events[0].command='reset-and-stop';t.events[1]={at:32,type:'command',source:'bot',command:'p'};
+ for(const r of t.rows.slice(2)){r.server.mode=0;r.server.tick=0;}
+ t.rows.splice(boundary==='first'?2:4,1);
+ assert.equal(m.evaluateRaceTrace(t).checkpoints.find(c=>c.id==='no-sequence-resume').status,'incomplete');
+});
+
+test('race CLI validates options after module constants initialize',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const result=spawnSync(process.execPath,[new URL('./live-sequences.mjs',import.meta.url).pathname,'--races','--mode','invalid'],{encoding:'utf8'});
+ assert.equal(result.status,1);assert.match(result.stderr,/Unknown race or mode/);assert.doesNotMatch(result.stderr,/ReferenceError/);
+});

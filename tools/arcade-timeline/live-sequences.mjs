@@ -252,10 +252,16 @@ async function runMode({scope,mode,outDir}) {
  return checks;
 }
 
-/** Returns independent CheckResult[] for the requested live inventory. Expanded
- * groups remain incomplete. Renderer fidelity failures belong to another index.
- */
-export async function runLiveSequences({scope='initial',mode='both',outDir='/tmp/pacman-live-sequences'}={}) {
+export function mergeLiveResults(base,produced) {
+ const inventory=new Set(base.map(c=>c.checkId));
+ for(const check of produced)if(!inventory.has(check.checkId))throw Error(`Check outside live inventory: ${check.checkId}`);
+ const byId=new Map(produced.map(c=>[c.checkId,c]));
+ return base.map(c=>byId.get(c.checkId)??c);
+}
+
+/** Returns the fixed live inventory. Full scope adds control races and actual
+ * Python simulation; unimplemented expanded groups remain incomplete. */
+export async function runLiveSequences({scope='initial',mode='both',outDir='/tmp/pacman-live-sequences',durationMs=120000}={}) {
  requiredChecks(scope);
  if(!['arcade','competition','both'].includes(mode))throw Error(`Unknown live mode: ${mode}`);
  outDir=path.resolve(outDir);fs.mkdirSync(outDir,{recursive:true});
@@ -264,12 +270,186 @@ export async function runLiveSequences({scope='initial',mode='both',outDir='/tmp
   checks.push(...await runMode({scope,mode:selected,outDir}));
   write(path.join(outDir,'index.json'),{version:2,kind:'live',scope,mode,checks});
  }
- write(path.join(outDir,'summary.json'),{milestone:'initial live flows only',expandedCoverage:'not completed',renderer:'Separate renderer results; live passes do not resolve fidelity failures.',counts:Object.fromEntries(['pass','fail','incomplete'].map(status=>[status,checks.filter(c=>c.status===status).length])),checks:checks.map(({checkId,status})=>({checkId,status}))});
+ if(scope==='full') {
+  const races=await runControlRaces({mode,outDir:path.join(outDir,'races')});
+  const {runSimulation}=await import('./simulation-run.mjs');
+  const simulation=await runSimulation({mode,outDir:path.join(outDir,'simulation'),durationMs});
+  checks.splice(0,checks.length,...mergeLiveResults(checks,[...races,...simulation]));
+  write(path.join(outDir,'index.json'),{version:2,kind:'live',scope,mode,checks});
+ }
+ write(path.join(outDir,'summary.json'),{milestone:scope==='initial'?'initial live flows only':'initial flows, control races and real Python simulation',expandedCoverage:'Remaining unmatched inventory stays incomplete',renderer:'Separate renderer results; live passes do not resolve fidelity failures.',counts:Object.fromEntries(['pass','fail','incomplete','unavailable'].map(status=>[status,checks.filter(c=>c.status===status).length])),checks:checks.map(({checkId,status})=>({checkId,status}))});
  return checks;
 }
+
+// Controlled bot/control races use the same production observer. Debug server
+// commands only arrange the phase; natural bot loss has its separate runner.
+export const RACE_SCENARIOS=['bot-resume','bot-reset','explicit-stop','manual-reset','reload-owned-hold','manual-pause','mode-change-ready','mode-change-death','mode-change-level-clear'];
+export function evaluateRaceTrace(trace) {
+ const definition=requiredChecks('full').find(c=>c.category==='live'&&c.scenario===trace.scenario&&c.mode===trace.mode);
+ if(!definition)throw Error(`Unknown race: ${trace.scenario}`);
+ const rows=trace.rows??[],events=trace.events??[],action=events.find(e=>e.type==='driver'&&e.name==='race-action');
+ const before=rows.filter(r=>action&&r.at<action.at),after=rows.filter(r=>action&&r.at>=action.at);
+ const phase=before.filter(r=>r.presentation?.kind||r.presentation?.dying||r.render.ready);
+ const commands=events.filter(e=>e.type==='command'&&action&&e.at>=action.at);
+ const sequenceCommands=commands.filter(e=>e.source?.startsWith('sequence:')&&['p','P'].includes(e.command));
+ const bounded=trace.endAt>=trace.deadline&&Number.isFinite(trace.deadline)&&after.length>1;
+ const found=new Map();
+ const put=(id,condition,reason,selected=after)=>found.set(id,{id,status:condition?'pass':'fail',reason,observationIds:ids(selected)});
+ const missing=(id,reason)=>found.set(id,{id,status:'incomplete',reason,observationIds:ids(after)});
+ const epochGroups=Object.groupBy(after,r=>r.epoch??0);
+ const intervalObserved=Object.entries(epochGroups).length>0&&Object.entries(epochGroups).every(([epoch,selected])=>{
+  const metadata=trace.epochs?.find(e=>e.epoch===Number(epoch));
+  const prior=before.findLast(r=>(r.epoch??0)===Number(epoch));
+  const first=prior?prior.raf+1:metadata?.firstRaf;
+  const last=metadata?.lastRaf??trace.endRaf;
+  return dense(selected)&&selected[0].raf===first&&selected.at(-1).raf===last;
+ });
+ const whole=(id,condition,reason)=>!bounded||!intervalObserved?missing(id,'Incomplete observer interval or boundary through active sequence deadline.'):put(id,condition,reason);
+ const progressedAfter=progressed(after)&&after.some(r=>r.server?.mode!==0);
+ const active=phase.length>1&&(trace.mode==='arcade'?phase.some(r=>r.server?.mode===0):progressed(before)&&!events.some(e=>e.type==='command'&&e.at<action?.at&&e.source?.startsWith('sequence:')&&['p','P'].includes(e.command)));
+ if(action) {
+  put('sequence-active',phase.length>0,'Actual phase rendered before action.',phase);
+  put('hold-active',active,trace.mode==='arcade'?'Arcade sequence owns a paused phase.':'Competition phase has positive progression and no presentation hold.',before);
+  put('bot-command',['resume_game','reset_game'].includes(action.command),'Controlled command delivered through the bot WebSocket route.');
+  put('reset-command',action.command==='manual-reset','Reset button invoked.');
+  put('stop-command',action.command==='reset-and-stop','Reset followed immediately by explicit bot pause.');
+  put('manual-pause-command',action.command==='manual-pause','User pause button followed by reload.');
+  put('reload',action.command==='reload','Real page reload; epochs retained separately.');
+  put('mode-change',action.command==='mode-change'&&Boolean(trace.targetMode),'Mode button changed the selected renderer mode.');
+ }
+ if(after.length) {
+  const reset=after.filter(r=>r.server?.tick===0&&r.server?.lives===3&&r.server?.mode===0);
+  put('reset-observed',reset.length>0,'Server reset acknowledged with tick zero and three lives.',reset);
+  if(trace.scenario==='bot-reset'||trace.scenario==='manual-reset')whole('stale-callback-suppressed',!sequenceCommands.some(e=>e.source==='sequence:death')&&(trace.scenario==='bot-reset'?progressedAfter:after.at(-1).server.mode===0),'Old death resume suppressed; automatic reset restarts, manual reset waits.');
+  if(trace.scenario==='explicit-stop'||trace.scenario==='manual-pause') {
+   put('stopped',after.at(-1).server.mode===0,'Explicit stop acknowledged by server.');
+   put('paused',after.at(-1).server.mode===0,'Manual pause remains paused across reload.');
+   whole('no-sequence-resume',!sequenceCommands.some(e=>e.command==='P')&&after.at(-1).server.mode===0,'No old automatic callback resumes explicit stop.');
+   // Reload is an explicit observation boundary; all callbacks in each epoch
+   // must still be present. The navigation gap cannot stand in for evidence.
+   const epochs=epochGroups;
+   const acknowledged=after.find(r=>r.server?.mode===0);
+   const paused=acknowledged&&after.filter(r=>r.at>=acknowledged.at&&r.server);
+   const remainsPaused=paused?.length>1&&paused.every(r=>r.server.mode===0);
+   if(trace.scenario==='manual-pause'&&bounded&&intervalObserved)put('no-automatic-resume',!commands.some(e=>e.command==='P')&&remainsPaused,'Observed paused before and after navigation through prior deadline.');
+   else whole('no-automatic-resume',!commands.some(e=>e.command==='P')&&remainsPaused,'No automatic resume during manual pause.');
+  }
+  if(trace.scenario==='bot-resume') {
+   if(trace.mode==='arcade') {
+    const release=sequenceCommands.find(e=>e.command==='P'&&e.source==='sequence:death');
+    const held=after.filter(r=>!release||r.at<release.at);
+    if(!release||!dense(held))missing('hold-preserved','Missing release or contiguous held observations.');
+    else put('hold-preserved',!progressed(held)&&!moved(held),'Bot resume does not advance held server ticks or rendered death location.',held);
+   }else put('hold-preserved',progressedAfter&&!sequenceCommands.length,'Competition continues without a presentation hold.');
+  }
+  if(trace.scenario.startsWith('mode-change-')) {
+   whole('pending-action-policy',!sequenceCommands.length,'Canceled sequence emits no delayed hold/resume.');
+   // An owned arcade pause must continue automatically. Competition death and
+   // level clear own no presentation pause; explicit bot resume is documented.
+   put('painted-continuation',progressedAfter&&after.some(r=>visible(r)&&!r.presentation?.kind&&!r.presentation?.dying),'Received ticks and visible production renderer continue after cancellation.');
+  }
+  put('ownership-recovered',progressedAfter,'Reload recovers the abandoned owned pause; competition never owns one.');
+  put('continuation-policy',progressedAfter&&(trace.mode==='arcade'||!sequenceCommands.length),'Positive progression with mode-specific presentation ownership.');
+ }
+ const checkpoints=definition.checkpoints.map(c=>found.get(c.id)??{id:c.id,status:'incomplete',reason:'Required checkpoint not observed.',observationIds:[]});
+ return {checkId:definition.id,scenario:trace.scenario,category:'live',mode:trace.mode,status:completeStatus(checkpoints),checkpoints};
+}
+
+export async function runControlRaces({mode='both',outDir='/tmp/pacman-control-races',scenarios=RACE_SCENARIOS}={}) {
+ if(!['arcade','competition','both'].includes(mode)||scenarios.some(s=>!RACE_SCENARIOS.includes(s)))throw Error('Unknown race or mode');
+ const {sequenceDeadline}=await import('./simulation-run.mjs');
+ const cleanup=createCleanup(),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'control-races-'));
+ cleanup.add(()=>fs.rmSync(tmp,{recursive:true,force:true}));
+ const checks=[];
+ const stop=async()=>{await cleanup.run();process.exit(130);};for(const signal of ['SIGINT','SIGTERM'])process.on(signal,stop);
+ try {
+  const ws=await startGameServer(tmp,cleanup),port=await startVisualizer(tmp,cleanup),browser=await launchBrowser();cleanup.add(()=>browser.close());
+  const send=await connectCommands(ws,cleanup);
+  for(const selected of mode==='both'?['arcade','competition']:[mode])for(const scenario of scenarios) {
+   const dir=path.resolve(outDir,selected,scenario);fs.mkdirSync(dir,{recursive:true});
+   send('r');await new Promise(resolve=>setTimeout(resolve,200));
+   const page=await browser.newPage({viewport:{width:224,height:352}});
+   let bot,epoch=0,offset=0,origin,deadline=0;
+   const trace={mode:selected,scenario,rows:[],events:[],errors:[],epochs:[]};
+   const driver=[];
+   const save=async()=>{
+    const data=await page.evaluate(()=>({snapshot:window.__arcadeLive.snapshot(),pause:window.__arcadePauseTrace.events(),origin:performance.timeOrigin,now:performance.now(),latestRaf:window.__arcadeLive.latest()?.raf}));
+    origin??=data.origin;offset=data.origin-origin;
+    trace.rows.push(...data.snapshot.rows.map(r=>({...r,id:`e${epoch}:${r.id}`,epoch,at:r.at+offset})));
+    trace.events.push(...data.snapshot.events.map(e=>({...e,epoch,at:e.at+offset})));
+    trace.epochs.push({epoch,timeOrigin:data.origin,pauseTrace:data.pause,firstRaf:data.snapshot.rows[0]?.raf,lastRaf:data.latestRaf});trace.endAt=data.now+offset;trace.endRaf=data.latestRaf;
+   };
+   const command=async(value,source='driver:phase-setup')=>{const at=await page.evaluate(()=>performance.now());driver.push({type:'command',command:value,source,at:at+offset});send(value);};
+   const mark=async(command)=>{await page.evaluate(command=>window.__arcadeLive.mark('race-action',{command}),command);};
+   const screenshot=async(name)=>page.locator('[data-arcade-screen]').screenshot({path:path.join(dir,`${name}.png`)});
+   try {
+    // Interception supplies the controlled channel without touching a live bot.
+    await page.routeWebSocket(url=>Number(url.port)!==ws,route=>{bot=route;});
+    await page.goto(`http://localhost:${port}/?timeline=1&observe=1&mode=${selected}&ws=${ws}`);
+    await page.waitForFunction(()=>window.__arcadeLive?.latest()?.server,null,{timeout:10000});
+    await page.getByRole('button',{name:'Unmute game audio'}).click();
+    await page.getByRole('button',{name:'Start / pause',exact:true}).click();
+    const readyCase=['reload-owned-hold','manual-pause','mode-change-ready'].includes(scenario);
+    if(!readyCase) {
+     await page.waitForFunction(()=>{const r=window.__arcadeLive.latest();return r.server.mode!==0&&!r.render.ready;},null,{timeout:10000});
+     if(scenario==='mode-change-level-clear') {
+      await command('c');await page.waitForTimeout(120);
+      const state=await page.evaluate(()=>window.__arcadeTimeline.frame());
+      outer:for(let row=0;row<state.pellets.length;row++)for(let col=0;col<28;col++)if((state.pellets[row]>>>col)&1){await command('x'+String.fromCharCode(row,col));break outer;}
+      await page.waitForFunction(()=>window.__arcadeLive.latest().presentation.kind==='levelComplete',null,{timeout:5000});
+     } else {
+      // Debug life loss arranges a reproducible control race only. It is never
+      // used by the natural Python simulation check.
+      await command('k');
+      await page.waitForFunction(()=>window.__arcadeLive.latest().presentation.dying||window.__arcadeLive.latest().presentation.kind==='death',null,{timeout:3000});
+     }
+    }
+    await page.waitForTimeout(120);
+    const timing=await page.evaluate(()=>({now:performance.now(),events:window.__arcadePauseTrace.events()}));
+    const active=timing.events.findLast(e=>e.type==='sequenceStarted');
+    deadline=Math.max(sequenceDeadline(active),timing.now+600);trace.deadline=deadline;
+    await screenshot('before');
+    if(scenario==='bot-resume'){await mark('resume_game');bot.send('resume_game');}
+    if(scenario==='bot-reset'){await mark('reset_game');bot.send('reset_game');deadline=Math.max(deadline,timing.now+6000);trace.deadline=deadline;}
+    if(scenario==='explicit-stop'){await mark('reset-and-stop');bot.send('reset_game');bot.send('pause_game');}
+    if(scenario==='manual-reset'){await mark('manual-reset');await page.getByRole('button',{name:'Reset',exact:true}).click();}
+    if(scenario==='manual-pause') {
+     // First finish READY so the button is an actual manual pause.
+     await page.waitForFunction(()=>window.__arcadeLive.latest().server.mode!==0&&!window.__arcadeLive.latest().render.ready,null,{timeout:10000});
+     await mark('manual-pause');await page.getByRole('button',{name:'Start / pause',exact:true}).click();await page.waitForTimeout(200);
+    }
+    if(scenario==='reload-owned-hold'||scenario==='manual-pause') {
+     if(scenario==='reload-owned-hold')await mark('reload');
+     await save();epoch++;await page.reload();await page.waitForFunction(()=>window.__arcadeLive?.latest()?.server,null,{timeout:10000});
+     offset=await page.evaluate(()=>performance.timeOrigin)-origin;
+     trace.deadline=Math.max(trace.deadline,offset+1000);
+    }
+    if(scenario.startsWith('mode-change-')) {
+     trace.targetMode=selected==='arcade'?'competition':'arcade';await mark('mode-change');
+     await page.getByRole('button',{name:selected==='arcade'?'Arcade mode':'Competition mode',exact:true}).click();
+     // Competition owns no automatic hold, so a bot command may resume the
+     // server's own level/death pause. Never rescue an arcade-owned pause.
+     if(selected==='competition'&&scenario!=='mode-change-ready'){await page.waitForTimeout(200);bot.send('resume_game');}
+    }
+    while(await page.evaluate(()=>performance.now())+offset<trace.deadline)await page.waitForTimeout(100);
+    await screenshot('after');await save();
+   }catch(error){trace.errors.push(error.message);try{await save();}catch{}}
+   finally{await page.close();}
+   trace.events.push(...driver);trace.events.sort((a,b)=>a.at-b.at);
+   trace.provenance={fixtures:false,frameOverrides:false,controlledBotChannel:true,phaseSetup:'Real server debug commands, retained with origin; not natural-life-loss evidence',screenshots:['before.png','after.png'],excludedRegions:[]};
+   write(path.join(dir,'trace.json'),trace);
+   const result=evaluateRaceTrace(trace);result.artifacts={trace:path.join(dir,'trace.json'),before:path.join(dir,'before.png'),after:path.join(dir,'after.png')};
+   if(trace.errors.length){result.errors=trace.errors;if(result.status==='pass')result.status='incomplete';}
+   checks.push(result);write(path.join(dir,'checks.json'),[result]);write(path.resolve(outDir,'index.json'),{version:2,kind:'live',checks});
+  }
+ }finally{await cleanup.run();for(const signal of ['SIGINT','SIGTERM'])process.removeListener(signal,stop);}
+ return checks;
+}
+
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
  const arg=(name,fallback)=>{const i=process.argv.indexOf(name);return i<0?fallback:process.argv[i+1];};
- runLiveSequences({scope:arg('--scope','initial'),mode:arg('--mode','both'),outDir:arg('--out','/tmp/pacman-live-sequences')}).then(checks=>{
+ const options={scope:arg('--scope','initial'),mode:arg('--mode','both'),outDir:arg('--out','/tmp/pacman-live-sequences'),durationMs:Number(arg('--duration-ms',120000))};
+ (process.argv.includes('--races')?runControlRaces(options):runLiveSequences(options)).then(checks=>{
   for(const c of checks)console.log(`${c.status}: ${c.checkId}${c.errors?' '+c.errors.join('; '):''}`);
   if(checks.some(c=>c.status!=='pass'))process.exitCode=1;
  }).catch(error=>{console.error(error);process.exitCode=1;});
