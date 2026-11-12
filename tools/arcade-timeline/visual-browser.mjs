@@ -75,9 +75,27 @@ try{
  assert.ok(pellet);send('x'+String.fromCharCode(...pellet));
  await page.waitForFunction(()=>window.__arcadeTimeline.events().some(e=>e.type==='levelCleared'),null,{timeout:5000});
  const levelState=await page.evaluate(()=>window.__arcadeTimeline.state());
- await page.getByRole('button',{name:'Arcade mode',exact:true}).click();await page.waitForTimeout(100);
+ await page.getByRole('button',{name:'Arcade mode',exact:true}).click();
  const levelAfter=await page.evaluate(()=>window.__arcadeTimeline.state());assert.equal(levelAfter.level,levelState.level);assert.equal(levelAfter.score,levelState.score);
- assert.equal(await page.locator('.maze.blank').count(),0);assert.ok(await page.locator('.pacman-position').count()>0);
+ assert.equal(await page.locator('.maze.blank').count(),0);
+ // Level reset briefly transmits (32,32): the renderer must honor those hidden
+ // bytes, then restore the actor when a visible packet actually arrives.
+ const visibility=await page.evaluate(()=>new Promise((resolve,reject)=>{
+  const observations=[],deadline=performance.now()+2000;
+  function observe(){
+   const state=window.__arcadeTimeline.state(),pacman=state?.pacman;
+   const visible=Boolean(pacman&&((pacman.rowState|pacman.colState)&32)===0);
+   const count=document.querySelectorAll('.pacman-position').length;
+   observations.push({at:performance.now(),tick:state?.tick,pacman,visible,count});
+   if(!visible&&count!==0)return reject(Error('Renderer showed Pac-Man while the source packet hid him'));
+   if(visible){if(count!==1)return reject(Error('Renderer did not restore Pac-Man after a visible source packet'));return resolve(observations);}
+   if(performance.now()>=deadline)return reject(Error('No visible server packet within 2000ms after level reset'));
+   requestAnimationFrame(observe);
+  }
+  requestAnimationFrame(observe);
+ }));
+ fs.writeFileSync(path.join(out,'level-clear-visibility.json'),JSON.stringify(visibility,null,2)+'\n');
+ assert.ok(await page.locator('.pacman-position').count()>0);
 
 
  await page.goto(`http://localhost:${port}/?timeline=1&ws=${ws}&bot=off`);assert.equal(await page.evaluate(()=>typeof window.__arcadeVisual),'undefined');assert.deepEqual(errors,[]);console.log(`Browser checks passed; screenshots: ${out}`);
