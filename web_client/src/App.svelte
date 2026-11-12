@@ -1266,7 +1266,7 @@
 />
 
 <div data-arcade-screen class="screen" class:arcade={arcadeLayout} class:non-interactive={$visualizerMode==='arcade'} style:--grid-size="{gridSize}px">
-{#if arcadeLayout}<ArcadeHud {gridSize} score={visualFixture?.state.score??currScore} lives={visualFixture?.state.lives??currLives} level={visualFixture?.state.level??currLevel} highScore={visualFixture?.state.highScore??highScore}/>{/if}
+{#if arcadeLayout}<ArcadeHud {gridSize} playerLabelVisible={visualFixture?.state.playerLabelVisible??true} score={visualFixture?.state.score??currScore} lives={visualFixture?.state.lives??currLives} level={visualFixture?.state.level??currLevel} highScore={visualFixture?.state.highScore??highScore}/>{/if}
 <div class="maze-space">
 
   <Maze
@@ -1276,6 +1276,7 @@
   />
 
   <Pellets
+    animate={visualFixture?.kind!=='arcade'}
     pelletGrid={visualFixture?.state.pellets??(levelFrozen ? emptyPelletGrid : pelletGrid)}
     {gridSize}
     {botSocket}

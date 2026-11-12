@@ -91,6 +91,7 @@
 
 <script>
 
+  export let animate=true;
   export let gridSize;
   export let pelletGrid;
   export let botSocket;
@@ -126,6 +127,7 @@
         >
           <span
             class={'pellet' + pelletMods[pelletGrid[i][j]]}
+            style:animation={animate?undefined:'none'}
             style:width='{pellet_size}px'
             style:height='{pellet_size}px'
           />

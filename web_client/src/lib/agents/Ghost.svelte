@@ -8,6 +8,7 @@
   export let gridSize;
   export let phase=0;
   export let frameOverride=null;
+  export let nativeState=null;
 
   // Manually specified color for this ghost
   export let color;
@@ -83,13 +84,13 @@
   // State decoding is shared with timing instrumentation.
   $: visual = getGhostVisualState(returning ? 0x80 : trappedState, frightState, modTicks, updatePeriod);
 
-$: spriteFrame=frameOverride??selectGhostFrame({color,direction:directionFor(dirX,dirY),phase:Math.floor(phase/132),...visual});
+$: spriteFrame=nativeState ? selectGhostFrame({...nativeState,direction:nativeState.facing,phase:nativeState.footPhase}) : frameOverride??selectGhostFrame({color,direction:directionFor(dirX,dirY),phase:Math.floor(phase/132),...visual});
   $: x=(posX+showMotion*(dirX*modTicks/updatePeriod)+spawnOffsetX)*gridSize+gridSize/2;
   $: y=(posY+showMotion*(dirY*modTicks/updatePeriod)+spawnOffsetY)*gridSize+gridSize/2;
 </script>
-{#if showGhost || returning}
+{#if nativeState ? nativeState.visible : showGhost || returning}
 {#key returning ? seenReturnEventId : 'server'}
-<div class="ghost" class:returning style:left="{returning?returnFromCol*gridSize+gridSize/2:x}px" style:top="{returning?returnFromRow*gridSize+gridSize/2:y}px" style:--dx="{(returnTarget[1]-returnFromCol)*gridSize}px" style:--dy="{(returnTarget[0]-returnFromRow)*gridSize}px">
+<div class="ghost" class:returning style:left="{nativeState ? nativeState.position.x*gridSize/8 : returning?returnFromCol*gridSize+gridSize/2:x}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : returning?returnFromRow*gridSize+gridSize/2:y}px" style:--dx="{(returnTarget[1]-returnFromCol)*gridSize}px" style:--dy="{(returnTarget[0]-returnFromRow)*gridSize}px">
 <Sprite frame={spriteFrame} scale={gridSize/8}/>
 </div>
 {/key}

@@ -7,6 +7,7 @@
   export let gridSize;
   export let phase=0;
   export let frameOverride=null;
+  export let nativeState=null;
   export let deathElapsedOverride=null;
   let aliveFrame=null;
   const motionPreference=window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -17,7 +18,7 @@
   let deathElapsed=0;
   const clock=setInterval(()=>{if(dying)deathElapsed=performance.now()-deathStarted;},16);
   $: aliveFrame=resolvePacmanFrame({previousFrame:aliveFrame,direction:directionFor(dirX,dirY),phase:reducedMotion?0:phase,active,moving,ready});
-  $: selectedFrame=frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
+  $: selectedFrame=nativeState ? (nativeState.deathElapsedMs!=null ? selectDeathFrame(nativeState.deathElapsedMs) : resolvePacmanFrame({previousFrame:null,direction:nativeState.facing,phase:nativeState.phase,active:true,moving:true,ready})) : frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
   export let pacmanRowState;
   export let pacmanColState;
   export let active = false;
@@ -74,8 +75,8 @@
   onDestroy(() => { clearTimeout(deathTimer);clearInterval(clock);motionPreference.removeEventListener("change",updateMotion); });
 </script>
 
-{#if showPacman || dying || deathElapsedOverride!==null}
-  <div class="pacman-position" style:left="{gridSize*(dying?lastX:posX)+gridSize/2}px" style:top="{gridSize*(dying?lastY:posY)+gridSize/2}px">
+{#if nativeState ? nativeState.visible : showPacman || dying || deathElapsedOverride!==null}
+  <div class="pacman-position" style:left="{nativeState ? nativeState.position.x*gridSize/8 : gridSize*(dying?lastX:posX)+gridSize/2}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : gridSize*(dying?lastY:posY)+gridSize/2}px">
     <Sprite frame={selectedFrame} scale={gridSize/8}/>
   </div>
 {/if}
