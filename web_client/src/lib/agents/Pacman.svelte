@@ -18,14 +18,14 @@
   let deathElapsed=0;
   const clock=setInterval(()=>{if(dying)deathElapsed=performance.now()-deathStarted;},16);
   $: aliveFrame=resolvePacmanFrame({previousFrame:aliveFrame,direction:directionFor(dirX,dirY),phase:reducedMotion?0:phase,active,moving,ready});
-  $: selectedFrame=nativeState ? (nativeState.deathElapsedMs!=null ? selectDeathFrame(nativeState.deathElapsedMs) : resolvePacmanFrame({previousFrame:null,direction:nativeState.facing,phase:nativeState.phase,active:true,moving:true,ready})) : frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
+  $: selectedFrame=nativeState ? (nativeState.deathElapsedMs!=null ? selectDeathFrame(nativeState.deathElapsedMs) : resolvePacmanFrame({previousFrame:null,direction:nativeState.facing,phase:nativeState.phase,active:true,moving:!ready,ready})) : frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
   export let pacmanRowState;
   export let pacmanColState;
   export let active = false;
   export let moving = false;
   export let deathEventId = null;
   export let deathPosition = null;
-  // READY! is showing: Pac-Man waits without chomping
+  // READY waits closed; competition can already be moving under the label.
   export let ready = false;
 
   let lastX = 13;

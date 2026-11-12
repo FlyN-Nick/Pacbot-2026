@@ -28,3 +28,12 @@ test('waiting to start and READY share the closed pose until movement begins',()
  assert.equal(resolvePacmanFrame({previousFrame:waiting,direction:'right',ready:true}),'pacman-right-2');
  assert.equal(resolvePacmanFrame({previousFrame:waiting,direction:'right',active:true,moving:true,phase:0}),'pacman-right-0');
 });
+
+test('moving READY cycles its mouth while waiting or inactive READY stays closed',()=>{
+ const phase=[0,66,132,198,264];
+ assert.deepEqual(phase.map(phase=>resolvePacmanFrame({previousFrame:'pacman-left-2',direction:'left',phase,active:true,moving:true,ready:true})),
+  ['pacman-left-0','pacman-left-1','pacman-left-2','pacman-left-1','pacman-left-0']);
+ for(const state of [{active:true,moving:false},{active:false,moving:true},{active:false,moving:false}]) {
+  assert.deepEqual(phase.map(phase=>resolvePacmanFrame({previousFrame:'pacman-left-0',direction:'left',phase,ready:true,...state})),Array(5).fill('pacman-left-2'));
+ }
+});

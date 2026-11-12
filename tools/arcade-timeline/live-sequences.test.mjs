@@ -59,3 +59,13 @@ test('live manifest preserves screenshot brackets and resolves artifact paths fr
  assert.deepEqual(manifest.samples[0].alignment.evidence,['arcade/screenshots.json','arcade/trace.json']);
  assert.match(manifest.samples[0].alignment.method,/not.*compositor/i);
 });
+
+test('death artwork coverage needs the initial up pose as well as numbered frames',async()=>{
+ const t=trace();t.rows=t.rows.filter(r=>r.render.frame!=='pacman-up-0');
+ assert.equal(checkpoint(await check(t,'death-respawn'),'death-art-transitions').status,'incomplete');
+});
+test('an animated stationary tail cannot supply a mouth cycle for preceding movement',async()=>{
+ const t=trace();const moving=t.rows.filter(r=>r.at>=80&&r.at<360);
+ for(const r of moving)r.render.x=100;
+ assert.notEqual(checkpoint(await check(t,'ready-movement'),'mouth-cycle').status,'pass');
+});

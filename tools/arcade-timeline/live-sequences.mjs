@@ -61,7 +61,8 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
     else if(held.length>1)verify('before-release',!moved(held)&&!progressed(held),'Arcade READY holds received ticks and painted position until its observed release.',held);
    } else if(firstMove&&progressed(initial))verify('before-release',!commands(start.at,pursuit?.at).some(e=>['p','P'].includes(e.command)&&e.source?.startsWith('sequence:')),'Competition progresses without presentation hold/resume commands.',initial,'No arcade hold required; positive server progression required.');
    if(firstMove) {
-    const moving=initial.filter(r=>r.at>=firstMove.at);
+    const lastMove=initial.findLast((r,i)=>i>0&&visible(r)&&visible(initial[i-1])&&xy(r)!==xy(initial[i-1]));
+    const moving=initial.filter(r=>r.at>=firstMove.at&&r.at<=(lastMove?.at??firstMove.at));
     const shapes=compact(moving.map(r=>r.render.frame?.match(/^pacman-\w+-(\d)$/)?.[1]).filter(x=>x!==undefined)).join(',');
     const cycle=['0,1,2,1,0','1,2,1,0,1','2,1,0,1,2','1,0,1,2,1'].some(pattern=>shapes.includes(pattern));
     if(!dense(moving))missing('mouth-cycle','Missing observer callbacks in mouth-cycle interval.',moving);
@@ -83,7 +84,7 @@ export function evaluateLiveTrace(trace,{scope='initial',mode=trace.mode}={}) {
    const animation=death.filter(r=>deathStart&&blank&&r.at>=deathStart.at&&r.at<=blank.at);
    const expected=Array.from({length:11},(_,i)=>`death-${i}`);
    const order=compact(artwork.map(r=>r.render.frame));
-   if(deathStart&&blank&&dense(animation)&&expected.every(frame=>order.includes(frame)))verify('death-art-transitions',order.join(',')===expected.join(','),'Every death artwork transition observed in order through blank.',animation);
+   if(deathStart?.render.frame==='pacman-up-0'&&blank&&dense(animation)&&expected.every(frame=>order.includes(frame)))verify('death-art-transitions',order.join(',')===expected.join(','),'Every death artwork transition observed in order through blank.',animation);
    else missing('death-art-transitions','Missing initial/death artwork/blank boundary or observer callbacks.',animation);
    const next=death.find(r=>spawn(r)&&closed(r)&&(mode==='competition'||r.render.ready));
    if(next)put('next-life-ready','pass','Next life observed at independent spawn center with closed pose.',[next],mode==='competition'?'Next life available; READY label is not required.':'Visible next-life READY required.');

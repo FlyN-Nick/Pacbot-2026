@@ -46,7 +46,7 @@
   let animationPhase=0;
   let highScore=0;
   let lastAnimationTime=performance.now();
-  const animationTimer=setInterval(()=>{const now=performance.now();if(!displayFrozen&&!readyVisible&&!allActorsHidden&&pacmanActive)animationPhase+=now-lastAnimationTime;lastAnimationTime=now;},16);
+  const animationTimer=setInterval(()=>{const now=performance.now();if(!displayFrozen&&(!readyVisible||pacmanMoving)&&!allActorsHidden&&pacmanActive)animationPhase+=now-lastAnimationTime;lastAnimationTime=now;},16);
   createVisualCapture(window.location.search,window,fixture=>visualFixture=fixture);
   $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
   $: highScore=Math.max(highScore,currScore);
