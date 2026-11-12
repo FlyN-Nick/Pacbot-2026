@@ -56,7 +56,7 @@
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
   import { GUI_TIMINGS } from './lib/guiTimings.js';
-  import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
+  import { parseTimelineParams, createTimeline, createLiveObservation, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
   import { WALLS, MAZE_ROWS as ROWS, MAZE_COLS as COLS } from './lib/maze.js';
   // A cleared board, shown while the level-complete sequence is frozen
@@ -79,8 +79,10 @@
   const timelineParams = parseTimelineParams(window.location.search);
   const timeline = createTimeline({ enabled: timelineParams.enabled });
   const frameTimelineTracker = createFrameTimelineTracker();
+  const liveObservation = createLiveObservation({enabled: timelineParams.enabled && new URLSearchParams(window.location.search).get('observe') === '1'});
   // Record when the start music really starts and stops (it can be cut short)
   const recordMusicStart = ({ name, duration }) => {
+    liveObservation.record('audio-start', {name, duration});
     if (name === 'intro') timeline.record('musicStarted');
     if (name === 'death') timeline.record('deathSoundStarted', { duration });
   };
@@ -312,6 +314,7 @@
 
   // Carry out one step of an arcade sequence (lib/arcadeSequencer.js)
   function executeStep(step) {
+    liveObservation.record('sequence-step', {step, kind: currentKind()});
     switch (step.action) {
       case 'hold':
         sendToSocket('p',`sequence:${runningKind}`);
@@ -442,6 +445,7 @@
   }
 
   function routeFrame(frame) {
+    liveObservation.record('server-frame', {frame});
     if(!latestFrame||frame.mode!==latestFrame.mode||frame.lives!==latestFrame.lives||frame.level!==latestFrame.level)pauseTrace.record('serverState',{mode:frame.mode,tick:frame.tick,lives:frame.lives,level:frame.level,score:frame.score,ghostCombo:frame.ghostCombo,pacman:frame.pacman,sequence:currentKind()});
     if (isGameReset(latestFrame, frame)) clearGameEffects();
     // Another client resumed play during the level sequence: show the live board
@@ -484,6 +488,7 @@
         if (!startRequested) runSequence($visualizerMode === 'arcade' ? 'startDetected' : 'start');
       }
       if (event.type === 'lifeLost') {
+        liveObservation.record('collision', {previous:latestFrame,received:frame,uncertainty:'Last received pre-loss position; wire protocol does not expose the exact collision position.'});
         timeline.anchor('pacmanCaught');
         clearGhostEaten();
         catchFrame = latestFrame;
@@ -566,6 +571,36 @@
         pellets: [...latestFrame.pelletRows],
       },
     };
+  }
+
+  // Observe the selected DOM artwork after the renderer has had a paint
+  // opportunity. This reads output only. Screenshots bracket these reads; rAF
+  // counters do not claim exact compositor identities.
+  if (timelineParams.enabled && new URLSearchParams(window.location.search).get('observe') === '1') {
+    let stopped=false,raf=0,handle,timer;
+    const geometry=element=>{
+      if(!element)return null;
+      const b=element.getBoundingClientRect();
+      return {left:b.left,top:b.top,width:b.width,height:b.height};
+    };
+    const read=()=>{
+      const actor=document.querySelector('.pacman-position');
+      const sprite=actor?.querySelector('.sprite');
+      const screen=document.querySelector('[data-arcade-screen]');
+      liveObservation.observe({raf,server:latestFrame,presentation:{kind:currentKind(),dying,frozen:displayFrozen},render:{
+        frame:sprite?.dataset.frame??null,
+        x:actor?parseFloat(actor.style.left)/gridSize*8:null,
+        y:actor?parseFloat(actor.style.top)/gridSize*8:null,
+        ready:Boolean(document.querySelector('.ready-banner')),
+        geometry:geometry(actor),screen:geometry(screen),
+        artwork:sprite?{backgroundImage:getComputedStyle(sprite).backgroundImage,backgroundPosition:getComputedStyle(sprite).backgroundPosition}:null,
+        ghosts:[...document.querySelectorAll('.ghost')].map(el=>({geometry:geometry(el),frame:el.querySelector('.sprite')?.dataset.frame})),
+      }});
+    };
+    const loop=()=>{if(stopped)return;raf++;timer=setTimeout(()=>{if(!stopped)read();},0);handle=requestAnimationFrame(loop);};
+    handle=requestAnimationFrame(loop);
+    window.__arcadeLive={snapshot:()=>liveObservation.snapshot(),latest:()=>liveObservation.latest(),mark:(name,detail={})=>liveObservation.record('driver',{name,...detail})};
+    onDestroy(()=>{stopped=true;cancelAnimationFrame(handle);clearTimeout(timer);delete window.__arcadeLive;});
   }
 
   /* Config */
@@ -1156,6 +1191,7 @@
   const sendToSocket = (message,source='visualizer') => {
     if (socketOpen) {
       if(['p','P','r','R'].includes(message))pauseTrace.record('commandSent',{command:message,source,sequence:currentKind()});
+      liveObservation.record('command', {command:message,source,sequence:currentKind()});
       socket.send(message);
     }
   }

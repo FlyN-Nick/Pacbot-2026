@@ -141,3 +141,23 @@ test('capture clock excludes scheduled future death frames until they are painte
 });
 
 test('measured death frame offsets are preserved for capture alignment',()=>{assert.deepEqual(deathFrameOffsetsMs({deathFrames:3,deathAnimationMs:1000,deathFrameOffsetsMs:[0,495,610.5]}),[0,495,610.5]);});
+
+test('live observation records actual output separately from scheduled logic', async () => {
+ const {createLiveObservation} = await import('./timeline.js');
+ assert.equal(typeof createLiveObservation,'function');
+ let at=10;const observation=createLiveObservation({enabled:true,now:()=>at});
+ observation.record('audio-start',{name:'death'});
+ observation.observe({raf:1,server:{tick:1},render:{frame:'death-0',x:76,y:92}});
+ const result=observation.snapshot();
+ assert.equal(result.rows[0].render.frame,'death-0');
+ assert.deepEqual(result.events,[{at:10,type:'audio-start',name:'death'}]);
+ result.rows[0].render.frame='blank';
+ assert.equal(observation.snapshot().rows[0].render.frame,'death-0');
+ at=20;observation.observe({raf:2,render:{frame:'death-1'}});
+ assert.equal(observation.snapshot().rows[1].at,20);
+});
+test('disabled live observer retains no records',async()=>{
+ const {createLiveObservation}=await import('./timeline.js');assert.equal(typeof createLiveObservation,'function');
+ const observation=createLiveObservation({enabled:false});observation.record('command',{});observation.observe({raf:1});
+ assert.deepEqual(observation.snapshot(),{rows:[],events:[]});
+});

@@ -104,3 +104,17 @@ export function createFrameTimelineTracker() {
     },
   };
 }
+
+/** Opt-in live evidence. Unlike createTimeline, all timestamps are receipt/read
+ * times. No future timestamps, selectors, fixtures or frame overrides are used.
+ * raf is a browser callback counter, NOT a compositor frame identifier.
+ */
+export function createLiveObservation({enabled,now=()=>performance.now()}) {
+ const rows=[],events=[];
+ return {
+  record(type,detail={}) { if(enabled)events.push(structuredClone({...detail,at:now(),type})); },
+  observe(detail) { if(enabled)rows.push(structuredClone({...detail,id:`r${rows.length}`,at:now()})); },
+  snapshot() { return structuredClone({rows,events}); },
+  latest() { return structuredClone(rows.at(-1)??null); },
+ };
+}
