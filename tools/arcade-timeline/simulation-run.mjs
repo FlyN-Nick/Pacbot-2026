@@ -72,7 +72,11 @@ export function evaluateSimulationTrace(trace) {
  if(collision&&connected&&collision.at>connected.at)put('natural-life-loss','pass','Received life loss during unmodified AStar simulation; no driver movement or kill commands.',rows.filter(r=>r.at>=collision.at).slice(0,2));
  const death=evaluateLiveTrace(trace,{mode:trace.mode}).find(c=>c.scenario==='death-respawn');
  const position=death.checkpoints.find(c=>c.id==='captured-death-position');
- if(collision&&death.checkpoints.find(c=>c.id==='death-art-transitions').status==='pass'&&position.status!=='incomplete')put('death-position-preserved',position.status,position.reason,rows.filter(r=>position.observationIds.includes(r.id)));
+ const prior=collision&&rows.findLast(r=>r.at<collision.at);
+ const blank=collision&&rows.find(r=>r.at>=collision.at&&r.render.frame==='blank');
+ const caughtThroughBlank=prior&&blank?[prior,...rows.filter(r=>r.at>=collision.at&&r.at<=blank.at)]:[];
+ const positionCoverage=caughtThroughBlank.length>2&&caughtThroughBlank.every((r,i)=>!i||r.raf===caughtThroughBlank[i-1].raf+1);
+ if(positionCoverage&&death.checkpoints.find(c=>c.id==='death-art-transitions').status==='pass'&&position.status!=='incomplete')put('death-position-preserved',position.status,position.reason+' Contiguous observations cover the pre-collision boundary through blank.',caughtThroughBlank);
  const after=rows.filter(r=>collision&&r.at>collision.at&&r.server?.lives===collision.received.lives);
  const complete=after.find(r=>!r.presentation?.dying&&!r.presentation?.kind&&r.server?.mode!==0&&r.render.frame&&r.render.frame!=='blank');
  const progression=complete&&after.filter(r=>r.at>=complete.at);

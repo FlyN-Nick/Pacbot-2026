@@ -140,3 +140,16 @@ test('race CLI validates options after module constants initialize',async()=>{
  const result=spawnSync(process.execPath,[new URL('./live-sequences.mjs',import.meta.url).pathname,'--races','--mode','invalid'],{encoding:'utf8'});
  assert.equal(result.status,1);assert.match(result.stderr,/Unknown race or mode/);assert.doesNotMatch(result.stderr,/ReferenceError/);
 });
+
+function heldRaceTrace() {
+ const t=raceTrace('bot-resume');t.events=[{type:'driver',name:'race-action',at:30,command:'resume_game'},{type:'command',source:'sequence:death',command:'P',at:90}];
+ t.rows=[0,20,40,60,80,100,120].map((at,i)=>({id:`r${i}`,raf:i+1,at,server:{mode:at<90?0:1,tick:at<90?0:i,lives:2},presentation:{kind:at<90?'death':null,dying:at<90},render:{frame:'pacman-left-2',x:76,y:92}}));
+ t.endAt=140;t.endRaf=7;t.deadline=130;return t;
+}
+test('bot-resume hold covers both action and release boundaries',async()=>{
+ const m=await modulePromise;assert.equal(m.evaluateRaceTrace(heldRaceTrace()).status,'pass');
+});
+for(const [boundary,at] of [['pre-action',20],['first held',40],['interior held',60],['last held',80],['first released',100]])test(`bot-resume hold rejects missing ${boundary} callback`,async()=>{
+ const m=await modulePromise,t=heldRaceTrace();t.rows=t.rows.filter(r=>r.at!==at);
+ assert.equal(m.evaluateRaceTrace(t).checkpoints.find(c=>c.id==='hold-preserved').status,'incomplete');
+});

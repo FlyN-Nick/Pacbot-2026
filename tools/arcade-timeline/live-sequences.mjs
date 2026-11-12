@@ -338,8 +338,10 @@ export function evaluateRaceTrace(trace) {
    if(trace.mode==='arcade') {
     const release=sequenceCommands.find(e=>e.command==='P'&&e.source==='sequence:death');
     const held=after.filter(r=>!release||r.at<release.at);
-    if(!release||!dense(held))missing('hold-preserved','Missing release or contiguous held observations.');
-    else put('hold-preserved',!progressed(held)&&!moved(held),'Bot resume does not advance held server ticks or rendered death location.',held);
+    const prior=before.at(-1),released=release&&after.find(r=>r.at>=release.at);
+    const coverage=prior&&released?[prior,...held,released]:[];
+    if(!release||held.length<2||!intervalObserved||!dense(coverage))missing('hold-preserved','Missing contiguous observations across action/hold/release boundaries.');
+    else put('hold-preserved',!progressed(held)&&!moved(held),'Bot resume does not advance held server ticks or rendered death location.',coverage);
    }else put('hold-preserved',progressedAfter&&!sequenceCommands.length,'Competition continues without a presentation hold.');
   }
   if(trace.scenario.startsWith('mode-change-')) {

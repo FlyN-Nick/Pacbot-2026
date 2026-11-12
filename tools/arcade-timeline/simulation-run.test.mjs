@@ -80,3 +80,19 @@ test('refused real bot socket is unavailable and its cleanup remains registered'
  const m=await subject;assert.equal(typeof m.openBotSocket,'function');const {freePort}=await import('./processes.mjs');const cleanup=createCleanup();
  try{await assert.rejects(m.openBotSocket(await freePort(),cleanup),/unavailable.*connection/i);}finally{await cleanup.run();}
 });
+
+function completeNaturalDeath() {
+ const rows=[];
+ const add=(at,frame='pacman-left-2',kind='death',tick=0,x=76,y=92)=>rows.push({id:`r${rows.length}`,raf:rows.length+1,at,server:{mode:tick?1:0,tick,lives:at<15?3:2},presentation:{kind,dying:kind==='death'},render:{frame,x,y,ready:at===190}});
+ for(const at of [0,10,20,30,40])add(at);
+ add(50,'pacman-up-0');for(let i=0;i<11;i++)add(60+i*10,`death-${i}`);
+ add(170,'blank');add(180,'blank');add(190,'pacman-left-2',null,1,108,188);add(200,'pacman-left-1',null,2,100,188);add(210,'pacman-left-0',null,3,92,188);
+ return {mode:'arcade',isolated:true,cleanup:true,rows,events:[{type:'driver',name:'bot-connected',at:5},{type:'collision',at:15,previous:{pacman:{rowState:11,colState:9}},received:{lives:2}},{type:'command',at:185,command:'P',source:'sequence:death'}]};
+}
+test('natural death preservation covers the pre-collision callback through blank',async()=>{
+ const m=await subject;assert.equal(m.evaluateSimulationTrace(completeNaturalDeath()).status,'pass');
+});
+for(const [boundary,at] of [['pre-collision',10],['first caught',20],['interior caught',30],['last caught',40],['first blank',170]])test(`natural death preservation rejects missing ${boundary} callback`,async()=>{
+ const m=await subject,t=completeNaturalDeath();t.rows=t.rows.filter(r=>r.at!==at);
+ assert.equal(m.evaluateSimulationTrace(t).checkpoints.find(c=>c.id==='death-position-preserved').status,'incomplete');
+});
