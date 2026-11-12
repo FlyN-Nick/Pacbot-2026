@@ -28,7 +28,7 @@ The bot supports Python 3.11 and newer. The current compatibility checks cover P
 Other useful files:
 
 - `decisionModule.py`: A* decision module with an asynchronous loop and game state locking
-- `dqn_module.py`: DQN decision module. It builds the same observations and action masks as the RL training environment, and, like training, uses the checkpoint only in "purgatory" (no frightened ghosts, ghosts not close) under the environment version the checkpoint records and `curc-pacbot-rl/src/checkpoints_known/superpelletmode.safetensors` otherwise. `tests/test_obs_parity.py` checks this against the training environment, which it builds from Rust source (needs [Rust](https://www.rust-lang.org/tools/install)): `uv run --extra dqn --group parity python -m unittest tests.test_obs_parity`
+- `dqn_module.py`: DQN decision module. It builds the same observations and action masks as the RL training environment, and plays the way the checkpoint was trained: a single-model checkpoint (trained with `--single-model`) plays every move; otherwise the checkpoint plays only in "purgatory" (no frightened ghosts, ghosts not close) under the environment version the checkpoint records, and `curc-pacbot-rl/src/checkpoints_known/superpelletmode.safetensors` plays the rest. `tests/test_obs_parity.py` checks this against the training environment, which it builds from Rust source (needs [Rust](https://www.rust-lang.org/tools/install)): `uv run --extra dqn --group parity python -m unittest tests.test_obs_parity`
 - `speedLogger.py`: measures how many game ticks Pacman takes to move one cell, to match the RL training speeds (4 to 14 ticks per move; the bot's simulation mode moves every 8) to the physical robot. Record a game, then summarize one or more recordings:
 
   ```sh

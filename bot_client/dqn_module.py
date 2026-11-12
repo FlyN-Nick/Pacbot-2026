@@ -184,7 +184,9 @@ class DQNDecisionModule:
         )
         self._using_astar: bool = False
         self._load_model(checkpoint_path)
-        self._load_super_pellet_model(SUPER_PELLET_MODEL_PATH)
+        self.super_q_net = None
+        if not self.single_model:
+            self._load_super_pellet_model(SUPER_PELLET_MODEL_PATH)
 
         if hybrid_mode:
             from decisionModule import DecisionModule
@@ -199,6 +201,8 @@ class DQNDecisionModule:
     def _load_model(self, checkpoint_path: str) -> None:
         loaded = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         self.env_version = int(loaded.get('env_version', 1))
+        # Recorded by curc-pacbot-rl train_dqn.py (utils.checkpoint_single_model)
+        self.single_model = bool(loaded.get('single_model', False))
         if self.env_version not in SUPPORTED_ENV_VERSIONS:
             raise ValueError(
                 f'{checkpoint_path} was trained with environment version {self.env_version}, but '
@@ -210,7 +214,9 @@ class DQNDecisionModule:
         self.q_net.load_state_dict(loaded['state_dict'])
         self.q_net.eval()
         print(f'[DQN] Loaded {model_name} (iter={loaded.get("iter_num","?")}, '
-              f'env version {self.env_version}) on {self.device}')
+              f'env version {self.env_version}, '
+              f'{"single model" if self.single_model else "with the super pellet model"}) '
+              f'on {self.device}')
 
     def _load_super_pellet_model(self, path: Path) -> None:
         from safetensors.torch import load_file
@@ -283,10 +289,14 @@ class DQNDecisionModule:
             DebugServer.instance.reset_cell_colors()
             DebugServer.instance.clear_path()
 
-        # Same split as training (utils.step_env_once): the trained model only
-        # plays purgatory, with super pellets hidden and off limits; otherwise
-        # the fixed super pellet model plays with the full observation.
-        if is_purgatory(self.state, self.env_version):
+        # Same split as training (utils.step_env_once): a single-model checkpoint
+        # plays every state with the full observation; otherwise the trained
+        # model only plays purgatory, with super pellets hidden and off limits,
+        # and the fixed super pellet model plays the rest.
+        if self.single_model:
+            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=False),
+                                    action_mask(self.state))
+        elif is_purgatory(self.state, self.env_version):
             action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=True),
                                     purgatory_action_mask(self.state))
         else:
