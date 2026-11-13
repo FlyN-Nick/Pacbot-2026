@@ -109,6 +109,31 @@ export async function runMutations({ out, root = repo, reference = path.join(rep
   return read(path.join(out, 'summary.json'));
 }
 
+/** A missing observation is not evidence that death was cancelled. Include the
+ * pre-action callback and independent final-rAF metadata so boundary deletions
+ * cannot leave an apparently dense, but truncated, interval. */
+export function evaluateBotDeathProbe(trace) {
+  const action = trace.events?.find(e => e.type === 'driver' && e.name === 'race-action' && e.command === 'resume_game');
+  const rows = trace.rows ?? [], epoch = action?.epoch ?? 0;
+  const before = rows.findLast(r => action && r.at < action.at && (r.epoch ?? 0) === epoch);
+  const after = rows.filter(r => action && r.at >= action.at);
+  const coverage = before ? [before, ...after] : [];
+  const metadata = trace.epochs?.find(e => e.epoch === epoch);
+  const dense = coverage.length > 2 && coverage.every((row, i) =>
+    Number.isSafeInteger(row.raf) && Number.isFinite(row.at) && (row.epoch ?? 0) === epoch
+    && (!i || row.raf === coverage[i - 1].raf + 1 && row.at > coverage[i - 1].at));
+  const complete = Number.isFinite(action?.at) && Number.isFinite(trace.deadline) && trace.deadline > action.at
+    && trace.endAt >= trace.deadline && after.at(-1)?.at >= trace.deadline && dense
+    && Number.isSafeInteger(trace.endRaf) && after.at(-1)?.raf === trace.endRaf
+    && metadata?.lastRaf === trace.endRaf && !(trace.errors ?? []).length;
+  const frames = after.filter(r => r.at <= trace.deadline && r.render?.frame?.startsWith('death-'));
+  return { target: 'bot-death-art', status: !complete ? 'incomplete' : frames.length ? 'pass' : 'fail',
+    reason: complete ? 'Bot resume during the caught freeze must preserve visible numbered death artwork before the observation deadline.'
+      : 'Missing contiguous observations across the bot action and deadline, independent final callback, or healthy probe evidence.',
+    action, deadline: trace.deadline, observationIds: coverage.map(r => r.id), deathObservationIds: frames.map(r => r.id),
+    errors: trace.errors ?? [], fixtures: false, frameOverrides: false };
+}
+
 async function probe(target, out) {
   if (target === 'waiting-closed' || target === 'captured-death-position') {
     const { runLiveSequences } = await import('./live-sequences.mjs');
@@ -122,11 +147,7 @@ async function probe(target, out) {
     const { runControlRaces } = await import('./live-sequences.mjs');
     await runControlRaces({ mode: 'arcade', scenarios: ['bot-resume'], outDir: path.join(out, 'live') });
     const trace = read(path.join(out, 'live/arcade/bot-resume/trace.json'));
-    const action = trace.events.find(e => e.type === 'driver' && e.name === 'race-action' && e.command === 'resume_game');
-    const after = trace.rows.filter(r => action && r.at >= action.at);
-    const frames = after.filter(r => r.render.frame?.startsWith('death-'));
-    const complete = action && after.length > 2 && after.at(-1).at >= trace.deadline;
-    return { target, status: !complete ? 'incomplete' : frames.length ? 'pass' : 'fail', reason: 'Bot resume during the caught freeze must preserve visible numbered death artwork before the observation deadline.', action, deadline: trace.deadline, deathObservationIds: frames.map(r => r.id), errors: trace.errors, fixtures: false, frameOverrides: false };
+    return evaluateBotDeathProbe(trace);
   }
   const { createCleanup } = await import('./processes.mjs');
   const { launchBrowser, startGameServer, startVisualizer } = await import('./run.mjs');

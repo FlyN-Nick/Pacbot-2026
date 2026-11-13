@@ -47,3 +47,31 @@ test('source mutations reject absent or ambiguous edits',t=>{
  const root=temporary(t),mutation=mutations[0];
  for(const text of ['different source',mutation.from+' '+mutation.from]){write(root,mutation.file,text);assert.throws(()=>applyMutation(root,mutation),/exactly once/);assert.equal(fs.readFileSync(path.join(root,mutation.file),'utf8'),text);}
 });
+
+import { evaluateBotDeathProbe } from './mutations.mjs';
+const botTrace = (death = true) => ({
+ events:[{type:'driver',name:'race-action',command:'resume_game',at:25,epoch:0}],deadline:65,endAt:95,endRaf:9,epochs:[{epoch:0,firstRaf:1,lastRaf:9}],errors:[],
+ rows:Array.from({length:9},(_,i)=>({id:`r${i+1}`,raf:i+1,at:(i+1)*10,epoch:0,render:{frame:death&&i>=3&&i<=5?`death-${i-3}`:'pacman-left-2'}})),
+});
+const retainedBot = name => {
+ const data=JSON.parse(fs.readFileSync(new URL('./evidence/bot-death-mutation-observations.json',import.meta.url)))[name];
+ return {...data,rows:data.rows.map(([id,raf,at,epoch,frame])=>({id,raf,at,epoch,render:{frame}}))};
+};
+test('complete bot observation distinguishes visible death from actual cancellation',()=>{
+ assert.equal(evaluateBotDeathProbe(botTrace()).status,'pass');assert.equal(evaluateBotDeathProbe(botTrace(false)).status,'fail');
+});
+for(const [label,raf] of [['interior callback',5],['last pre-action callback',2],['first post-action callback',3],['last pre-deadline callback',6],['first post-deadline callback',7],['final observed callback',9]])test(`missing ${label} makes bot cancellation incomplete`,()=>{
+ const trace=botTrace(false);trace.rows=trace.rows.filter(r=>r.raf!==raf);assert.equal(evaluateBotDeathProbe(trace).status,'incomplete');
+});
+test('deleted death observations cannot masquerade as a detected cancellation',()=>{
+ const baseline=evaluateBotDeathProbe(botTrace()),trace=botTrace();trace.rows=trace.rows.filter(r=>!r.render.frame.startsWith('death-'));
+ const result=evaluateBotDeathProbe(trace);assert.equal(result.status,'incomplete');assert.equal(evaluateProof('bot-death-art',baseline,{...result,failureCode:'death-art-cancelled'}).status,'fail');
+});
+test('missing bot action bracket or independent final callback cannot complete the interval',()=>{
+ for(const edit of [t=>{t.rows=t.rows.filter(r=>r.at>=25);},t=>{delete t.endRaf;},t=>{t.epochs=[];},t=>{t.rows=t.rows.filter(r=>r.at<65);}]){const trace=botTrace(false);edit(trace);assert.equal(evaluateBotDeathProbe(trace).status,'incomplete');}
+});
+test('actual retained bot baseline and production mutant remain valid; removed death interval is incomplete',()=>{
+ const baseline=retainedBot('baseline'),mutated=retainedBot('mutated');assert.equal(evaluateBotDeathProbe(baseline).status,'pass');assert.equal(evaluateBotDeathProbe(mutated).status,'fail');
+ const removed=baseline.rows.filter(r=>r.render.frame?.startsWith('death-'));assert.equal(removed.length,97);
+ baseline.rows=baseline.rows.filter(r=>!r.render.frame?.startsWith('death-'));const result=evaluateBotDeathProbe(baseline);assert.equal(result.status,'incomplete');assert.equal(evaluateProof('bot-death-art',evaluateBotDeathProbe(retainedBot('baseline')),{...result,failureCode:'death-art-cancelled'}).status,'fail');
+});
