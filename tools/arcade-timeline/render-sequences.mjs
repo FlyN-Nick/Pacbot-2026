@@ -107,10 +107,10 @@ export async function renderSequences({reference,out}){
   for(const entry of index.sequences){
    const sourceEntry=referenceIndex.sequences.find(e=>e.checkId===entry.checkId),definition=requiredChecks(index.scope).find(d=>d.id===entry.checkId);
    if(sourceEntry?.status!=='recorded'||definition.category!=='full-screen')continue;
-   if(!['ready-movement','death-respawn'].includes(definition.scenario))continue;
+
    try {
     const sourceFile=artifact(reference,sourceEntry.manifest),source=read(sourceFile);validateRecordedSequence(reference,source,definition);
-    const clock=deathClock(source),folder=source.scenario;
+    const clock={...deathClock(source),...(source.provenance.pacmanFacing?{pacmanFacing:source.provenance.pacmanFacing}:{})},folder=source.scenario;
     for(const sub of ['actual','reference','difference','inputs','evidence'])fs.mkdirSync(path.join(out,folder,sub),{recursive:true});
     const actual={version:2,kind:'renderer-actual',scenario:source.scenario,provenance:{artifactBase:'index-root',
      sourceManifestSha256:sha(fs.readFileSync(sourceFile)),checkpoints:source.provenance.checkpoints,observedInterval:source.provenance.observedInterval,

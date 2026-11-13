@@ -40,7 +40,13 @@ return function(map, mem, encode, getFrame)
     }
   end
   local machineState, machineScreenFrame
+  local direction = os.getenv('ARCADE_SEQUENCE_DIRECTION')
+  if direction and direction ~= 'Left' and direction ~= 'Right' and direction ~= 'Up' and direction ~= 'Down' then error('Unknown sequence input direction') end
   function result.machineFrame()
+    if direction and getFrame() == 700 then
+      manager.machine.ioport.ports[':IN0'].fields['P1 ' .. direction]:set_value(1)
+      result.event('sequenceInput', {direction=direction, value=1})
+    end
     if getFrame() >= 400 then machineState, machineScreenFrame = state(), screen:frame_number() end
   end
   function result.event(kind, data)

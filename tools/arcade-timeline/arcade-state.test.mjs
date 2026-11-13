@@ -21,7 +21,7 @@ test('offscreen hardware actors stay hidden even with unknown sprite phases',()=
  assert.equal(adaptArcadeState(r).pacman.visible,false);
 });
 test('rejects visible unknown phases, orientation and unverified progression',()=>{
- const r=raw();r.spriteAttributes[10]=180;assert.throws(()=>adaptArcadeState(r),/unverified.*Pac-Man/i);
+ const r=raw();r.spriteAttributes[10]=182;assert.throws(()=>adaptArcadeState(r),/unverified.*Pac-Man/i);
  r.spriteAttributes[10]=194;r.flipScreen=1;assert.throws(()=>adaptArcadeState(r),/orientation/);
  r.flipScreen=0;r.levelByte=1;assert.throws(()=>adaptArcadeState(r),/level/);
 });
@@ -43,4 +43,24 @@ test('blank painted high score remains hidden zero; malformed score tiles reject
  const r=raw();r.videoRam[1006]=64;r.videoRam[1005]=64;
  assert.equal(adaptArcadeState(r).highScore,0);
  r.videoRam[1016]=55;assert.throws(()=>adaptArcadeState(r),/score tile/);
+});
+
+test('calibrated frightened palettes survive hardware slot reorder and restore normal ghosts',()=>{
+ const r=raw();r.spriteAttributes[2]=194;r.spriteAttributes[3]=9;r.spriteAttributes[10]=112;r.spriteAttributes[11]=17;
+ const s=adaptArcadeState(r);assert.deepEqual(s.pacman.position,{x:113,y:92});
+ const frightened=s.ghosts.find(g=>g.frightened);assert.equal(frightened.footPhase,0);assert.equal(frightened.flashing,false);
+ r.spriteAttributes[10]=116;r.spriteAttributes[11]=18;
+ const white=adaptArcadeState(r).ghosts.find(g=>g.frightened);assert.equal(white.flashing,true);assert.equal(white.footPhase,1);
+ r.spriteAttributes[10]=128;r.spriteAttributes[11]=1;
+ const normal=adaptArcadeState(r).ghosts.find(g=>g.color==='red');assert.equal(normal.facing,'right');assert.equal(normal.frightened,false);
+});
+test('calibrated eyes palette takes facing from painted code and refuses score-popup semantics',()=>{
+ const r=raw();r.spriteAttributes[2]=128;r.spriteAttributes[3]=25;
+ const eye=adaptArcadeState(r).ghosts.find(g=>g.eaten);assert.equal(eye.facing,'right');assert.equal(eye.frightened,false);
+ r.spriteAttributes[2]=140;assert.equal(adaptArcadeState(r).ghosts.find(g=>g.eaten).facing,'down');
+ r.spriteAttributes[2]=160;r.spriteAttributes[3]=24;assert.throws(()=>adaptArcadeState(r),/score.popup/i);
+});
+test('directional mouth codes preserve observed facing and closed artwork requires chronology',()=>{
+ const r=raw();for(const[attr,direction,phase]of [[176,'right',0],[184,'right',66],[180,'down',0],[188,'down',66],[181,'up',0],[189,'up',66]]){r.spriteAttributes[10]=attr;const s=adaptArcadeState(r);assert.equal(s.pacman.facing,direction);assert.equal(s.pacman.phase,phase);}
+ r.spriteAttributes[10]=192;assert.throws(()=>adaptArcadeState(r),/facing context/i);assert.equal(adaptArcadeState(r,{pacmanFacing:'up'}).pacman.facing,'up');
 });

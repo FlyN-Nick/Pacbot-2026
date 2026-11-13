@@ -121,3 +121,30 @@ Measured geometry and field limits:
 - Score/high-score first bytes were observed as hex 00,10,20,…,70 with painted 00,10,20,…,70, changing at frames 668,677,…,722. Higher-score digits and the fourth raw byte remain unclassified. Lives changes 3→2 at frame 1593, while the footer updates later; use retained video/color RAM to describe displayed icons. `levelByte=0` and the cherry icon were observed on the first board only. Later-level and fruit-history progression remain unavailable. READY, pellet removal, HUD glyphs and all screen tiles remain in the full video/color arrays.
 
 These observations combine actual adjacent captures with the official [MAME 0.289 video implementation](https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman_v.cpp), [memory/port declarations](https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman.cpp), and [screen API documentation](https://docs.mamedev.org/luascript/ref-devices.html). ROM verification alone does not establish paint alignment. Raw state remains unchanged for later sample matching; canonical browser adapter inputs belong in separate provenance.
+
+### Expanded sequence/display checks
+
+`record-sequences.mjs --scope full --out <empty-dir>` attempts four real joystick
+mouth cycles, normal ghost foot cycles, blue/white restoration and eyes, with
+bounded MAME0.289 captures. The108groups/363checkpoints never shrink when states
+cannot be reached or adapted. `render-sequences.mjs` attempts every recorded
+full-screen group; unsupported source states remain non-pass. No tolerances,
+actor-position fitting or hidden maze regions are used.
+
+`node live-sequences.mjs --expanded --mode both --out <dir>` runs four expanded
+live scenarios using the production observer and isolated real server. Debug
+life decrements arrange penultimate lives; the final life uses real collision.
+Completion requires no sequence resume after catch and no active server after
+pause acknowledgment through the bounded deadline. Competition level clear
+requires positive progression without presentation holds. Score/eyes/house
+assertions require visible ordered observations of the same ghost.
+
+`node expanded-visual.mjs --out <empty-dir>` uses archived user sheets at
+`.local-assets/sprites` and literal documented HUD policies, never current
+browser output as references. Native, fractional and Retina runs retain inputs,
+images, source hashes, dimensions, composition measurements and fixed inventory.
+Fractional setup is uniform1.3 scaling of native224x288, only in this display
+runner; it never runs in the MAME fidelity pipeline. Actual computed grid color
+must settle after CSS transitions. These categories cannot satisfy full-screen
+fidelity. `--display fractional` selects that display while keeping other
+required entries explicitly incomplete.

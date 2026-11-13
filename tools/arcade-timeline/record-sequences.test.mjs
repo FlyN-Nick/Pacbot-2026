@@ -55,9 +55,11 @@ test('a valid observer associates pixels with post-update state and rejects alte
  const hash=b=>createHash('sha256').update(b).digest('hex');
  const dir=temp(t), proofs=[],samples=[];
  for(let frame=1;frame<=4;frame++){
-   const coordinates=Array(16).fill(0); coordinates[10]=135+frame;coordinates[11]=68;
-   const state={spriteAttributes:[0,0,0,0,0,0,0,0,0,0,194,9,0,0,0,0],spriteCoordinates:coordinates};
-   const machineState=structuredClone(state);machineState.spriteCoordinates[10]--;
+   const slot=frame%2?5:1; // Fright reorders Pac-Man into slot1; hardware correction applies.
+   const coordinates=Array(16).fill(0); coordinates[slot*2]=135+frame-(slot<=2?1:0);coordinates[slot*2+1]=68;
+   const attributes=Array(16).fill(0);attributes[slot*2]=194;attributes[slot*2+1]=9;
+   const state={spriteAttributes:attributes,spriteCoordinates:coordinates};
+   const machineState=structuredClone(state);machineState.spriteCoordinates[slot*2]--;
    const p=new PNG({width:224,height:288}),left=105-frame;
    const points=[];
    for(let y=1;y<=13;y++)for(let x=1;x<=13;x++)if(!((x<=4||x>=10)&&(y<=2||y>=12)))points.push([x,y]);

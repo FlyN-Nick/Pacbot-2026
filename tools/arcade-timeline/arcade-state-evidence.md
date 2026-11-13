@@ -15,3 +15,36 @@ Upright tile(r,c) maps to videoRAM offset r-2+(29-c)*32 for2<=r<34; outer rows u
 Header score is read from displayed row1 digits, columns1..6 and11..16; tile0..9 are decimal digits,64 blank. Initial high score is all blanks (zero/hidden); at668 it displays10, and at1373 displays70. This avoids unverified high BCD bytes. Player label row0,col3 is49 when1UP is painted and64 while it blinks off. Footer tiles33,32/35,34 form each spare-life icon;1373/1594 display two,1603 one even though lives RAM changed at1593. Count painted complete icons and supply count+1 to existing spareLives helper. First/cherry footer is tiles145,144/147,146 at(row34..35,col24..25), offsets5,4,37,36; require those bytes and levelByte0. Other level/fruit histories remain unavailable.
 
 Canonical eyes/frightened precedence is browser-tested through the shared Ghost selector, but raw frightened/eyes decoding is deliberately unavailable until independent source calibration. No initial sequence claims that expanded coverage.
+
+## Expanded probes (MAME0.289, Task6)
+
+The full recorder attempts bounded frightened/ghost-eaten and four real joystick
+recordings. Existing scenario RAM writes are documented in command provenance;
+no ROM bytes are exported. Directional P1 input is held from recorder frame700.
+Independent native pixel probes retained under
+`.superpowers/sdd/2026-11-10-sequence-validation/task-6-evidence` establish:
+
+- Normal ghost attr128/132 right,136/140 down,144/148 left,152/156 up:
+  blue pupils determine facing and lower-foot silhouettes determine phase.
+- Palette17blue and18white use attr112/116, foot0/1 respectively. Native
+  lower silhouettes at rows13/14 are `BB.BBB..BBB.BB`/`B...BB..BB...B` for112,
+  versus `WWWW.WWWW.WWWW`/`.WW...WW...WW` for white116.
+- Eyes palette25 uses normal direction codes. The ghostEaten recording reaches
+  down/right/up eyes and house arrival at1004; left-eyes is not reached.
+  Palette24/attr160 is a score popup. Canonical popup semantics remain
+  unsupported, including if a popup occurs in a checkpoint's neighbor frame.
+- Pac-Man open/half: right176/184, down180/188, up181/189. Closed192 is shared
+  and requires recorded directional context. Left178/186/194 is unchanged.
+  Death remains elapsed time from animation onset, never per-art-code fitting.
+- Fright reorders slots. Find the unique palette9 Pac-Man, applying the original
+  hardware position formula and first-slots correction. Calibration still needs
+  four distinct moving closed-pose PNG proofs rejecting prior machine state.
+  Frightened/eyes slots retain position/phase without inferring original ghost
+  identity; normal palette colors still identify normal ghosts.
+
+Raw fields and PNGs remain unchanged. Source sheets differ from native MAME
+artwork/placement: no rectangles are shifted or tolerance changed to match.
+`probe-mappings.json`, `pixel-probe.mjs`, raw screenshots and final reference/
+replay trees retain measurements. Unreached normal directions, left-eyes,
+higher HUD progression, popup rendering, full-screen last-life and full-screen
+level-clear mappings remain unavailable.

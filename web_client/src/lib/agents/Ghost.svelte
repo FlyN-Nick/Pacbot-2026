@@ -90,7 +90,7 @@ $: spriteFrame=nativeState ? selectGhostFrame({...nativeState,direction:nativeSt
 </script>
 {#if nativeState ? nativeState.visible : showGhost || returning}
 {#key returning ? seenReturnEventId : 'server'}
-<div class="ghost" class:returning style:left="{nativeState ? nativeState.position.x*gridSize/8 : returning?returnFromCol*gridSize+gridSize/2:x}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : returning?returnFromRow*gridSize+gridSize/2:y}px" style:--dx="{(returnTarget[1]-returnFromCol)*gridSize}px" style:--dy="{(returnTarget[0]-returnFromRow)*gridSize}px">
+<div class="ghost" data-ghost-color={color} class:returning style:left="{nativeState ? nativeState.position.x*gridSize/8 : returning?returnFromCol*gridSize+gridSize/2:x}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : returning?returnFromRow*gridSize+gridSize/2:y}px" style:--dx="{(returnTarget[1]-returnFromCol)*gridSize}px" style:--dy="{(returnTarget[0]-returnFromRow)*gridSize}px">
 <Sprite frame={spriteFrame} scale={gridSize/8}/>
 </div>
 {/key}

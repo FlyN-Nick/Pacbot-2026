@@ -144,11 +144,11 @@ export function attachLiveEvidence(checks,trace,captures,tracePath) {
 }
 /** v2 images retain both neighboring DOM reads. paintedFrame is explicitly
  * the after-read rAF counter, not an assertion of compositor/image identity. */
-export function makeLiveManifest(check,captures,tracePath) {
+export function makeLiveManifest(check,captures,tracePath,screenshotsPath=`${check.mode}/screenshots.json`) {
  const samples=captures.filter(c=>c.before&&c.after).map(c=>{
   const state={before:c.before,after:c.after};
   return {id:c.id,event:check.scenario,offsetFrames:0,paintedFrame:c.after.raf,image:c.image,dimensions:c.dimensions,state,
-   alignment:{method:'Asynchronous post-render DOM bracket; rAF counter, not exact compositor identity',paintedFrame:c.after.raf,state,evidence:[`${check.mode}/screenshots.json`,tracePath]}};
+   alignment:{method:'Asynchronous post-render DOM bracket; rAF counter, not exact compositor identity',paintedFrame:c.after.raf,state,evidence:[screenshotsPath,tracePath]}};
  });
  const manifest={version:2,kind:'live',scenario:check.scenario,provenance:{mode:check.mode,trace:tracePath,fixtures:false,frameOverrides:false,
   observationPolicy:'All-observed intervals require contiguous observer callbacks in trace; screenshots are asynchronous brackets.',
@@ -271,10 +271,12 @@ export async function runLiveSequences({scope='initial',mode='both',outDir='/tmp
   write(path.join(outDir,'index.json'),{version:2,kind:'live',scope,mode,checks});
  }
  if(scope==='full') {
+  const {runExpandedLive}=await import('./expanded-live.mjs');
+  const expanded=await runExpandedLive({mode,outDir:path.join(outDir,'expanded')});
   const races=await runControlRaces({mode,outDir:path.join(outDir,'races')});
   const {runSimulation}=await import('./simulation-run.mjs');
   const simulation=await runSimulation({mode,outDir:path.join(outDir,'simulation'),durationMs});
-  checks.splice(0,checks.length,...mergeLiveResults(checks,[...races,...simulation]));
+  checks.splice(0,checks.length,...mergeLiveResults(checks,[...expanded,...races,...simulation]));
   write(path.join(outDir,'index.json'),{version:2,kind:'live',scope,mode,checks});
  }
  write(path.join(outDir,'summary.json'),{milestone:scope==='initial'?'initial live flows only':'initial flows, control races and real Python simulation',expandedCoverage:'Remaining unmatched inventory stays incomplete',renderer:'Separate renderer results; live passes do not resolve fidelity failures.',counts:Object.fromEntries(['pass','fail','incomplete','unavailable'].map(status=>[status,checks.filter(c=>c.status===status).length])),checks:checks.map(({checkId,status})=>({checkId,status}))});
@@ -451,7 +453,7 @@ export async function runControlRaces({mode='both',outDir='/tmp/pacman-control-r
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
  const arg=(name,fallback)=>{const i=process.argv.indexOf(name);return i<0?fallback:process.argv[i+1];};
  const options={scope:arg('--scope','initial'),mode:arg('--mode','both'),outDir:arg('--out','/tmp/pacman-live-sequences'),durationMs:Number(arg('--duration-ms',120000))};
- (process.argv.includes('--races')?runControlRaces(options):runLiveSequences(options)).then(checks=>{
+ (process.argv.includes('--expanded')?import('./expanded-live.mjs').then(m=>m.runExpandedLive(options)):process.argv.includes('--races')?runControlRaces(options):runLiveSequences(options)).then(checks=>{
   for(const c of checks)console.log(`${c.status}: ${c.checkId}${c.errors?' '+c.errors.join('; '):''}`);
   if(checks.some(c=>c.status!=='pass'))process.exitCode=1;
  }).catch(error=>{console.error(error);process.exitCode=1;});

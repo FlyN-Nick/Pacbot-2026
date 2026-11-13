@@ -9,6 +9,7 @@ import { PNG } from 'pngjs';
 import { checkRomDir, isRomsetGood } from './record.mjs';
 import { validateSequence } from './sequence-contract.mjs';
 import { requiredChecks } from './sequence-coverage.mjs';
+import {expandedReferenceRanges} from './visual-scenarios.mjs';
 
 const here = import.meta.dirname;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -50,6 +51,11 @@ export function validateCheckpointCoverage(samples, checkpoints, definition) {
           throw Error('Incomplete death art boundaries/transitions');
         }
       }
+      if(definition.scenario?.startsWith('mouth-')&&check.id==='mouth-cycle') {
+        const expected={left:[194,186,178,186,194],right:[192,184,176,184,192],up:[192,189,181,189,192],down:[192,188,180,188,192]}[definition.scenario.slice(6)];
+        const attrs=selected.map(sample=>sample.state.spriteAttributes[10]),transitions=attrs.filter((a,i)=>!i||a!==attrs[i-1]);
+        if(!expected||transitions.join(',')!==expected.join(','))throw Error('Incomplete or mismatched directional mouth cycle');
+      }
       if (definition.scenario === 'ready-movement' && check.id === 'mouth-cycle') {
         const transitions = codes.filter((code, i) => !i || code !== codes[i - 1]);
         if (!transitions.join(',').includes('48,46,44,46,48')) throw Error('Incomplete observed mouth cycle');
@@ -61,9 +67,14 @@ export function validateCheckpointCoverage(samples, checkpoints, definition) {
 // Independent PNG observation, not a value copied from RAM. In the initial
 // sequences yellow Pac-Man is in slot 5. Source geometry is verified below
 // using moving closed poses; masked pixels/occlusion are never called full art.
+function pacmanSlot(state) {
+  const slots=Array.from({length:8},(_,slot)=>slot).filter(slot=>state.spriteAttributes[slot*2+1]===9);
+  return slots.length===1?slots[0]:-1;
+}
+function pacmanAttribute(state) {const slot=pacmanSlot(state);return slot<0?null:state.spriteAttributes[slot*2];}
+function pacmanOrigin(state) {const slot=pacmanSlot(state);return slot<0?null:{left:240-state.spriteCoordinates[slot*2]-(slot<=2?1:0),top:272-state.spriteCoordinates[slot*2+1]};}
 function yellowBounds(png, state) {
-  const left = 240 - state.spriteCoordinates[10];
-  const top = 272 - state.spriteCoordinates[11];
+  const origin=pacmanOrigin(state);if(!origin)return null;const {left,top}=origin;
   const points = [];
   for (let y = Math.max(24, top); y < Math.min(264, top + 16); y++) {
     for (let x = Math.max(0, left); x < Math.min(224, left + 16); x++) {
@@ -75,7 +86,7 @@ function yellowBounds(png, state) {
     right: Math.max(...points.map(p => p[0])), bottom: Math.max(...points.map(p => p[1])), pixels: points.length } : null;
 }
 function closedBounds(state) {
-  const left = 240 - state.spriteCoordinates[10], top = 272 - state.spriteCoordinates[11];
+  const origin=pacmanOrigin(state);if(!origin)return null;const {left,top}=origin;
   return { left: left + 1, top: top + 1, right: left + 13, bottom: top + 13, pixels: 137 };
 }
 function artifact(root, relative) {
@@ -94,7 +105,7 @@ function verifyCalibration(root, file) {
     const raw = readJSON(artifact(root, proof.raw));
     const png = PNG.sync.read(fs.readFileSync(artifact(root, proof.image)));
     const observed = yellowBounds(png, raw.paintedState);
-    if (frames.has(raw.frame) || raw.paintedState.spriteAttributes[10] !== 194 || raw.machineState.spriteAttributes[10] !== 194
+    if (frames.has(raw.frame) || pacmanAttribute(raw.paintedState) !== 194 || pacmanAttribute(raw.machineState) !== 194
       || raw.screenFrame !== raw.machineScreenFrame + 1
       || !isDeepStrictEqual(observed, closedBounds(raw.paintedState))
       || isDeepStrictEqual(observed, closedBounds(raw.machineState))) throw Error('Paint observer calibration does not distinguish adjacent state');
@@ -131,30 +142,31 @@ export function validateRecordedSequence(root, manifest, definition) {
   return manifest;
 }
 
-function capture(root, scenario, romDir) {
+function capture(root, scenario, romDir, direction) {
   const relative = `${scenario}/raw`, dir = path.join(root, relative);
   fs.mkdirSync(dir, { recursive: true });
   const args = ['pacman', '-rompath', romDir, '-autoboot_script', path.join(here, 'mame/recorder.lua'),
-    '-nothrottle', '-video', 'none', '-sound', 'none', '-skip_gameinfo', '-noreadconfig', '-nowriteconfig',
+    '-nothrottle', '-video', 'none', '-sound', 'none', '-seconds_to_run', '120', '-skip_gameinfo', '-noreadconfig', '-nowriteconfig',
     '-cfg_directory', path.join(root, scenario, 'cfg'), '-nvram_directory', path.join(root, scenario, 'nvram')];
   const result = spawnSync('mame', args, { cwd: path.join(here, 'mame'), encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, SDL_VIDEODRIVER: 'dummy', ARCADE_SCENARIO: scenario,
+    env: { ...process.env, SDL_VIDEODRIVER: 'dummy', ARCADE_SCENARIO: direction?'start':scenario, ...(direction?{ARCADE_SEQUENCE_DIRECTION:direction}:{}),
       ARCADE_OUT: path.join(dir, 'timeline.json'), ARCADE_SEQUENCE_DIR: dir } });
   fs.writeFileSync(path.join(root, scenario, 'mame.log'), `${result.stdout ?? ''}${result.stderr ?? ''}`);
   writeJSON(path.join(root, scenario, 'command.json'), { executable: 'mame', args,
     inputs: [{ frame: 300, input: 'Coin 1', value: 1 }, { frame: 306, input: 'Coin 1', value: 0 },
       { frame: 400, input: '1 Player Start', value: 1 }, { frame: 406, input: '1 Player Start', value: 0 }],
-    joystick: 'untouched; default left movement', memoryWrites: 'none', environment: { SDL_VIDEODRIVER: 'dummy' } });
+    joystick: direction?`${direction} held from recorder frame700; retained sequenceInput event`:'untouched; default left movement', memoryWrites: scenario==='fright'?'Existing recorder plants power pellet at firstPelletsEaten[3]':scenario==='ghostEaten'?'Existing recorder plants power pellet and teleports Pac-Man to Blinky for ghost-eaten setup':'none', environment: { SDL_VIDEODRIVER: 'dummy' } });
   if (result.status !== 0 || result.error || /LUA ERROR|Fatal error/.test(`${result.stdout}${result.stderr}`)) throw Error(`MAME capture failed: ${result.error?.message ?? result.status}`);
   const rows = fs.readdirSync(dir).filter(name => /^f\d+\.json$/.test(name)).sort().map(name => readJSON(path.join(dir, name)));
   if (!rows.length) throw Error('No painted frames recorded');
   return { relative, rows, events: readJSON(path.join(dir, 'events.json')) };
 }
 
-function build(root, scenario, capture, environment) {
+function build(root, scenario, capture, environment, expanded) {
   const { rows, relative } = capture;
-  const checkId = scenario === 'start' ? 'full-screen:ready-movement' : 'full-screen:death-respawn';
-  const definition = requiredChecks('initial').find(check => check.id === checkId);
+  const checkId = expanded?.definition.id ?? (scenario === 'start' ? 'full-screen:ready-movement' : 'full-screen:death-respawn');
+  const definition = expanded?.definition ?? requiredChecks('initial').find(check => check.id === checkId);
+  const folder=expanded?`${scenario}/${definition.scenario}`:scenario;fs.mkdirSync(path.join(root,folder),{recursive:true});
   const first = (predicate, reason) => { const row = rows.find(predicate); if (!row) throw Error(`Unavailable checkpoint: ${reason}`); return row.frame; };
   const ready = first(r => r.frame > 500 && r.paintedState.mainState === 3 && r.paintedState.readyTile === 0x52
     && r.paintedState.spriteCoordinates[10] === 135, 'ready-visible with initialized actors');
@@ -162,8 +174,9 @@ function build(root, scenario, capture, environment) {
     && r.paintedState.spriteCoordinates[10] !== 135, 'first painted movement');
   const startMove = movement(ready);
   let from, to, anchor;
-  const ranges = {};
-  if (scenario === 'start') {
+  const ranges = expanded?.ranges ?? {};
+  if(expanded){from=Math.min(...Object.values(ranges).flat())-1;to=Math.max(...Object.values(ranges).flat())+1;anchor=from+1;}
+  else if (scenario === 'start') {
     from = ready - 2; to = startMove + 32; anchor = ready;
     ranges['ready-visible'] = [ready, ready];
     ranges['before-release'] = [startMove - 1, startMove - 1];
@@ -186,27 +199,27 @@ function build(root, scenario, capture, environment) {
     ranges['next-life-ready'] = [nextReady, nextReady];
     ranges['first-movement'] = [nextMove, nextMove];
   }
-  const selected = rows.filter(row => row.frame >= from && row.frame <= to);
-  if (selected.length !== to - from + 1) throw Error('Incomplete dense capture interval');
+  const selected = rows.filter(row => expanded?Object.values(ranges).some(([a,b])=>row.frame>=a-1&&row.frame<=b+1):row.frame >= from && row.frame <= to);
+  if (!expanded && selected.length !== to - from + 1) throw Error('Incomplete dense capture interval');
   // Prove the callback association using several independent moving, closed
   // poses. Their PNG bounds match AFTER state and reject BEFORE state.
-  const proofs = rows.filter(row => row.paintedState.spriteAttributes[10] === 194
-    && row.machineState.spriteAttributes[10] === 194
-    && row.paintedState.spriteCoordinates[10] !== row.machineState.spriteCoordinates[10])
+  const proofs = rows.filter(row => pacmanAttribute(row.paintedState) === 194
+    && pacmanAttribute(row.machineState) === 194
+    && !isDeepStrictEqual(pacmanOrigin(row.paintedState),pacmanOrigin(row.machineState)))
     .filter(row => isDeepStrictEqual(yellowBounds(PNG.sync.read(fs.readFileSync(path.join(root, relative, row.image))), row.paintedState), closedBounds(row.paintedState)))
     .slice(0, 8).map(row => ({ raw: `${relative}/${id(row.frame)}.json`, image: `${relative}/${row.image}` }));
-  const calibration = `${scenario}/paint-calibration.json`;
+  const calibration = `${folder}/paint-calibration.json`;
   writeJSON(path.join(root, calibration), { method: 'mame-frame-done-motion-v1',
     relationship: 'frame_done PNG agrees with post-update sprite registers; machine notifier precedes that paint; logical actor RAM may lead hardware sprite state',
-    proofs, coordinateFormula: 'slot5 upright left=240-coordinate[10], top=272-coordinate[11] (zero-based indexes)',
+    proofs, coordinateFormula: 'unique palette9 slot s: upright left=240-coordinate[2*s]-(s<=2?1:0), top=272-coordinate[2*s+1]',
     source: 'https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman_v.cpp' });
   verifyCalibration(root, calibration);
-  fs.mkdirSync(path.join(root, scenario, 'evidence'));
+  fs.mkdirSync(path.join(root, folder, 'evidence'));
   const checkpoints = Object.fromEntries(Object.entries(ranges).map(([name, [firstFrame, lastFrame]]) => [name, {
     sampleIds: selected.filter(r => r.frame >= firstFrame && r.frame <= lastFrame).map(r => id(r.frame)), firstFrame, lastFrame,
   }]));
   const samples = selected.map(row => {
-    const image = `${relative}/${row.image}`, raw = `${relative}/${id(row.frame)}.json`, evidence = `${scenario}/evidence/${id(row.frame)}.json`;
+    const image = `${relative}/${row.image}`, raw = `${relative}/${id(row.frame)}.json`, evidence = `${folder}/evidence/${id(row.frame)}.json`;
     const bytes = fs.readFileSync(path.join(root, image));
     writeJSON(path.join(root, evidence), { method: 'mame-frame-done-motion-v1', calibration, raw,
       pngSha256: digest(bytes), rawSha256: digest(fs.readFileSync(path.join(root, raw))), yellowBounds: yellowBounds(PNG.sync.read(bytes), row.paintedState) });
@@ -216,12 +229,13 @@ function build(root, scenario, capture, environment) {
   });
   const manifest = { version: 2, kind: 'renderer-reference', scenario: definition.scenario,
     provenance: { ...environment, artifactBase: 'index-root', capture: 'full native upright screen; no crop, scale, region suppression or overlays',
+      ...(definition.scenario.startsWith('mouth-')?{pacmanFacing:definition.scenario.slice(6)}:{}),
       commands: `${scenario}/command.json`, rawEvents: `${relative}/events.json`, checkpoints,
-      observedInterval: { firstFrame: from, lastFrame: to, sampling: 'every emulated frame including both boundaries' },
+      observedInterval: { firstFrame: from, lastFrame: to, sampling: expanded?'checkpoint frames and immediate neighbors':'every emulated frame including both boundaries' },
       rawSchema: 'mame-pacman-raw-v1; logical RAM is not assumed to be already painted',
-      unsupported: ['pre-start full-screen browser waiting equivalent', 'unobserved level and fruit progression', 'unprobed directional/fear/eyes semantic mapping'] }, samples };
+      unsupported: ['pre-start full-screen browser waiting equivalent', 'unobserved level and fruit progression', 'unreached directional states, anonymous frightened identities and score-popup rendering'] }, samples };
   validateRecordedSequence(root, manifest, definition);
-  const file = `${scenario}/manifest.json`;
+  const file = `${folder}/manifest.json`;
   writeJSON(path.join(root, file), manifest);
   // Human-review contact sheet: full native frames at anchors and art changes.
   const interesting = new Set(Object.values(ranges).flat());
@@ -231,8 +245,8 @@ function build(root, scenario, capture, environment) {
   const frames = selected.filter(row => interesting.has(row.frame));
   const sheet = new PNG({ width: 224 * 8, height: 288 * Math.ceil(frames.length / 8) });
   frames.forEach((row, i) => PNG.bitblt(PNG.sync.read(fs.readFileSync(path.join(root, relative, row.image))), sheet, 0, 0, 224, 288, (i % 8) * 224, Math.floor(i / 8) * 288));
-  fs.writeFileSync(path.join(root, scenario, 'contact-sheet.png'), PNG.sync.write(sheet));
-  writeJSON(path.join(root, scenario, 'contact-sheet.json'), frames.map(row => ({ frame: row.frame, image: `${relative}/${row.image}` })));
+  fs.writeFileSync(path.join(root, folder, 'contact-sheet.png'), PNG.sync.write(sheet));
+  writeJSON(path.join(root, folder, 'contact-sheet.json'), frames.map(row => ({ frame: row.frame, image: `${relative}/${row.image}` })));
   return { checkId, status: 'recorded', manifest: file };
 }
 
@@ -263,6 +277,20 @@ function main() {
       try { index.sequences[position] = build(root, scenario, capture(root, scenario, process.env.PACMAN_ROM_DIR), environment); }
       catch (error) { index.sequences[position] = { checkId, status: 'incomplete', reason: error.message }; }
       save();
+    }
+    if(scope==='full')for(const scenario of ['fright','ghostEaten']) {
+      const recording=capture(root,scenario,process.env.PACMAN_ROM_DIR);
+      for(const definition of requiredChecks(scope).filter(d=>d.category==='full-screen'&&(scenario==='fright'?d.scenario==='fright-restoration'||d.scenario.startsWith('ghost-')&&d.scenario!=='ghost-eaten':d.scenario.startsWith('eyes-')))) {
+        const position=index.sequences.findIndex(e=>e.checkId===definition.id);
+        try{const ranges=expandedReferenceRanges(definition.scenario,recording.rows);index.sequences[position]=build(root,scenario,recording,environment,{definition,ranges});}
+        catch(error){index.sequences[position]={checkId:definition.id,status:'unavailable',reason:error.message};}
+        save();
+      }
+    }
+    if(scope==='full')for(const direction of ['left','right','up','down']) {
+      const scenario=`direction-${direction}`,definition=requiredChecks(scope).find(d=>d.id===`full-screen:mouth-${direction}`),position=index.sequences.findIndex(e=>e.checkId===definition.id);
+      try {const recording=capture(root,scenario,process.env.PACMAN_ROM_DIR,direction[0].toUpperCase()+direction.slice(1)),ranges=expandedReferenceRanges(definition.scenario,recording.rows);index.sequences[position]=build(root,scenario,recording,environment,{definition,ranges});}
+      catch(error){index.sequences[position]={checkId:definition.id,status:'unavailable',reason:error.message};}save();
     }
   } catch (error) {
     index.sequences = index.sequences.map(entry => ({ ...entry, reason: error.message })); save(); console.error(error.message);

@@ -25,30 +25,44 @@ export function adaptArcadeState(raw, context={}) {
  if(raw.flipScreen!==0)throw Error('Unverified orientation');
  if(raw.levelByte!==0)throw Error('Unverified level progression');
  const ready=raw.videoRam[tileOffset(20,11)]===82;
- const pacman={...position(raw,5),facing:null,phase:0,deathElapsedMs:null};
- const attr=raw.spriteAttributes[10],code=attr>>2;
+ const pacmanSlots=Array.from({length:8},(_,slot)=>slot).filter(slot=>raw.spriteAttributes[slot*2+1]===9);
+ if(pacmanSlots.length!==1)throw Error('Unverified Pac-Man slot assignment');
+ const pacmanSlot=pacmanSlots[0];
+ const pacman={...position(raw,pacmanSlot),facing:null,phase:0,deathElapsedMs:null};
+ const attr=raw.spriteAttributes[pacmanSlot*2],code=attr>>2;
  if(pacman.visible) {
-  if(raw.spriteAttributes[11]!==9)throw Error('Unverified Pac-Man palette');
+  if(raw.spriteAttributes[pacmanSlot*2+1]!==9)throw Error('Unverified Pac-Man palette');
   if(code>=52&&code<=63&&attr%4===0) {
    const {emulatedFrame,deathCatchFrame,deathAnimationStartFrame}=context;
    if(![emulatedFrame,deathCatchFrame,deathAnimationStartFrame].every(Number.isSafeInteger)||deathAnimationStartFrame<deathCatchFrame||emulatedFrame<deathAnimationStartFrame)throw Error('Missing verified death clock');
    pacman.deathElapsedMs=(emulatedFrame-deathAnimationStartFrame)*FRAME_MS;
    pacman.catchElapsedMs=(emulatedFrame-deathCatchFrame)*FRAME_MS;
   }else {
-   const phase={178:0,186:66,194:132}[attr];
-   if(phase===undefined)throw Error(`Unverified visible Pac-Man phase ${attr}`);
-   pacman.facing='left';pacman.phase=phase;
+   const mapped={176:['right',0],178:['left',0],180:['down',0],181:['up',0],184:['right',66],186:['left',66],188:['down',66],189:['up',66],194:['left',132]}[attr];
+   if(attr===192){if(!['right','up','down'].includes(context.pacmanFacing))throw Error('Missing verified Pac-Man facing context');pacman.facing=context.pacmanFacing;pacman.phase=132;}
+   else {if(!mapped)throw Error(`Unverified visible Pac-Man phase ${attr}`);[pacman.facing,pacman.phase]=mapped;}
   }
  }
- const ghosts=['red','pink','cyan','orange'].map((color,i)=>{
-  const slot=i+1,actor={...position(raw,slot),color,facing:null,footPhase:0,eaten:false,frightened:false,flashing:false};
-  if(actor.visible){
-   const attribute=raw.spriteAttributes[slot*2],sprite=attribute>>2;
-   if(attribute%4||raw.spriteAttributes[slot*2+1]!==[1,3,5,7][i]||![34,35,36,37,38,39].includes(sprite))throw Error(`Unverified visible ghost phase/palette ${attribute}`);
-   actor.facing=sprite<36?'down':sprite<38?'left':'up';actor.footPhase=sprite%2;
+ const ghosts=[];
+ for(let slot=0;slot<8;slot++) {
+  if(slot===pacmanSlot)continue;
+  const geometry=position(raw,slot),attribute=raw.spriteAttributes[slot*2],palette=raw.spriteAttributes[slot*2+1],sprite=attribute>>2;
+  if(!geometry.visible||palette===0)continue;
+  if(palette===24)throw Error('Unverified score-popup rendering');
+  const normalColor={1:'red',3:'pink',5:'cyan',7:'orange'}[palette];
+  const actor={...geometry,color:normalColor??'red',facing:null,footPhase:0,eaten:palette===25,frightened:palette===17||palette===18,flashing:palette===18};
+  if(actor.frightened) {
+   if(![112,116].includes(attribute))throw Error('Unverified frightened artwork');
+   actor.facing='left';actor.footPhase=sprite%2; // Direction is visually immaterial for frightened art.
+  }else {
+   if(attribute%4||(!normalColor&&!actor.eaten)||sprite<32||sprite>39)throw Error(`Unverified visible ghost phase/palette ${attribute}`);
+   actor.facing=['right','down','left','up'][Math.floor((sprite-32)/2)];actor.footPhase=sprite%2;
   }
-  return actor;
- });
+  // Anonymous frightened/eyes hardware slots retain paint position and phase;
+  // their original character identity is not inferred from reordered slots.
+  actor.sourceSlot=slot;ghosts.push(actor);
+ }
+ if(ghosts.length>4)throw Error('Unverified visible ghost count');
  const pellets=Array.from({length:31},(_,row)=>Array.from({length:28},(_,col)=>{
   const offset=tileOffset(row+3,col),code=raw.videoRam[offset],color=raw.colorRam[offset]&31;
   return color===16?(code===16?1:code===20?2:0):0;
@@ -59,5 +73,5 @@ export function adaptArcadeState(raw, context={}) {
  return {schema:'arcade-render-v1',pacman,ghosts,pellets,ready,moving:!ready&&raw.subState===3,
   score:score(raw,1,6),highScore:score(raw,11,16),lives:spare+1,level:1,
   playerLabelVisible:raw.videoRam[tileOffset(0,3)]===49,
-  maze:{flashing:false,blank:false},unavailable:{expandedActors:'Frightened, eyes, other facing and palettes have not been calibrated',progression:'Only first/cherry board is calibrated'}};
+  maze:{flashing:false,blank:false},unavailable:{expandedActors:'Score popups remain uncalibrated; frightened/eyes character identity is not inferred',progression:'Only first/cherry board is calibrated'}};
 }

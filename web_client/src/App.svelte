@@ -603,9 +603,12 @@
         x:actor?parseFloat(actor.style.left)/gridSize*8:null,
         y:actor?parseFloat(actor.style.top)/gridSize*8:null,
         ready:Boolean(document.querySelector('.ready-banner')),
+        gameOver:Boolean(document.querySelector('.game-over-banner')),
+        scores:[...document.querySelectorAll('.ghost-score')].map(el=>el.textContent),
+        maze:document.querySelector('.maze')?.classList.contains('blank')?'blank':document.querySelector('.maze')?.classList.contains('flashing')?'white':'blue',
         geometry:geometry(actor),screen:geometry(screen),
         artwork:sprite?{backgroundImage:getComputedStyle(sprite).backgroundImage,backgroundPosition:getComputedStyle(sprite).backgroundPosition}:null,
-        ghosts:[...document.querySelectorAll('.ghost')].map(el=>({geometry:geometry(el),frame:el.querySelector('.sprite')?.dataset.frame})),
+        ghosts:[...document.querySelectorAll('.ghost')].map(el=>({geometry:geometry(el),frame:el.querySelector('.sprite')?.dataset.frame,identity:el.dataset.ghostColor,x:(el.getBoundingClientRect().left+el.getBoundingClientRect().width/2-document.querySelector('.maze-space').getBoundingClientRect().left)/gridSize*8,y:(el.getBoundingClientRect().top+el.getBoundingClientRect().height/2-document.querySelector('.maze-space').getBoundingClientRect().top)/gridSize*8})),
       }});
     };
     const loop=()=>{if(stopped)return;raf++;timer=setTimeout(()=>{if(!stopped)read();},0);handle=requestAnimationFrame(loop);};

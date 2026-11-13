@@ -310,7 +310,7 @@ subscription = emu.add_machine_frame_notifier(function()
   -- Scenario end
   local done = false
   if scenario == "start" then
-    done = seen("musicEnded") and started and frame >= started + 60
+    done = seen("musicEnded") and started and frame >= started + (os.getenv("ARCADE_SEQUENCE_DIRECTION") and 240 or 60)
   elseif scenario == "death" then
     local ended = seen("deathEnded")
     -- Play resumes (gameStarted) after the READY that follows the death
