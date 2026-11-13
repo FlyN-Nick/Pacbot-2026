@@ -80,4 +80,6 @@
   {/each}
 </div>
 
-<style>.arcade .effect-banner{animation:none;text-shadow:none;letter-spacing:0;top:calc(17*var(--grid-size));left:calc(11*var(--grid-size));transform:none;font-size:0;line-height:0}</style>
+<style>.arcade .effect-banner{animation:none;text-shadow:none;letter-spacing:0;top:calc(17*var(--grid-size));left:calc(11*var(--grid-size));transform:none;font-size:0;line-height:0}
+.arcade .game-over-banner{left:50%;transform:translateX(-50%)}
+</style>

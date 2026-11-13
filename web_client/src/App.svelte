@@ -110,6 +110,7 @@
   let displayFrozen = false;
   let frozenFrame = null;
   let catchFrame = null;
+  let terminalGhostFrame = null;
   let ghostsHidden = false;
   let startRequested = false;
   let sessionStarted = false;
@@ -156,6 +157,7 @@
     modeChangeRelease.cancel();
     eventTracker.reset();
     latestFrame = null;
+    terminalGhostFrame = null;
     visualEvents = [];
     deathEventId = null;
     deathPosition = null;
@@ -510,6 +512,7 @@
         timeline.anchor('pacmanCaught');
         clearGhostEaten();
         catchFrame = latestFrame;
+        if (frame.lives === 0) terminalGhostFrame = latestFrame;
         // A real death removes Pac-Man from the board and the server pauses itself
         const pacmanRemoved = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) !== 0;
         runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
@@ -547,6 +550,15 @@
       timeline.record(type, data);
     }
     ghostReturnEvents = ghostReturnEvents;
+    // A terminal packet can clear directions while leaving ghosts on their final
+    // tiles. Keep their last drawn phase, but never mask a real move or visibility
+    // change (including the server's hidden/death and respawn packets).
+    if (terminalGhostFrame && (frame.lives > 0 || frame.level !== terminalGhostFrame.level ||
+      frame.ghosts.some((ghost, index) => {
+        const previous = terminalGhostFrame.ghosts[index];
+        return !previous || (ghost.rowState & 0x3f) !== (previous.rowState & 0x3f) ||
+          (ghost.colState & 0x3f) !== (previous.colState & 0x3f);
+      }))) terminalGhostFrame = null;
     latestFrame = frame;
     releaseModeChangePause(frame.mode);
     const actions = getEventActions(events);
@@ -939,7 +951,7 @@
           pelletGrid = pelletGrid;
         }
         routeFrame({
-          tick: currTicks, mode: gameMode, lives: currLives,
+          tick: currTicks, updatePeriod, mode: gameMode, lives: currLives,
           score: currScore, level: currLevel, ghostCombo,
           pacman: { rowState: pacmanRowState, colState: pacmanColState },
           ghosts: [
@@ -1067,7 +1079,11 @@
 
   // While a death is frozen, show everyone where Pac-Man was caught
   $: frozenPacman = displayFrozen ? frozenFrame?.pacman : null;
-  $: frozenGhosts = displayFrozen ? frozenFrame?.ghosts : null;
+  // Coordinates and interpolation timing belong to the same source packet.
+  $: ghostFrame = displayFrozen ? frozenFrame : terminalGhostFrame;
+  $: frozenGhosts = ghostFrame?.ghosts;
+  $: ghostUpdatePeriod = ghostFrame?.updatePeriod ?? updatePeriod;
+  $: ghostModTicks = (ghostFrame?.tick ?? currTicks) % ghostUpdatePeriod;
 
   // Calculate the remainder when currTicks is divided by updatePeriod
   $: modTicks = currTicks % updatePeriod
@@ -1373,9 +1389,9 @@
   {#if numActiveGhosts >= 1 && !hiddenGhosts.has(0)}
     <Ghost
       {gridSize}
-      {modTicks}
+      modTicks={ghostModTicks}
       phase={animationPhase}
-      {updatePeriod}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[0]?.rowState ?? redRowState}
       colState={frozenGhosts?.[0]?.colState ?? redColState}
       frightState={frozenGhosts?.[0]?.frightState ?? redFrightState}
@@ -1388,9 +1404,9 @@
   {#if numActiveGhosts >= 2 && !hiddenGhosts.has(1)}
     <Ghost
       {gridSize}
-      {modTicks}
+      modTicks={ghostModTicks}
       phase={animationPhase}
-      {updatePeriod}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[1]?.rowState ?? pinkRowState}
       colState={frozenGhosts?.[1]?.colState ?? pinkColState}
       frightState={frozenGhosts?.[1]?.frightState ?? pinkFrightState}
@@ -1403,9 +1419,9 @@
   {#if numActiveGhosts >= 3 && !hiddenGhosts.has(2)}
     <Ghost
       {gridSize}
-      {modTicks}
+      modTicks={ghostModTicks}
       phase={animationPhase}
-      {updatePeriod}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[2]?.rowState ?? cyanRowState}
       colState={frozenGhosts?.[2]?.colState ?? cyanColState}
       frightState={frozenGhosts?.[2]?.frightState ?? cyanFrightState}
@@ -1418,9 +1434,9 @@
   {#if numActiveGhosts >= 4 && !hiddenGhosts.has(3)}
     <Ghost
       {gridSize}
-      {modTicks}
+      modTicks={ghostModTicks}
       phase={animationPhase}
-      {updatePeriod}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[3]?.rowState ?? orangeRowState}
       colState={frozenGhosts?.[3]?.colState ?? orangeColState}
       frightState={frozenGhosts?.[3]?.frightState ?? orangeFrightState}
