@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { PNG } from 'pngjs';
+import { compareImages } from './visual-compare.mjs';
 import { requiredChecks } from './sequence-coverage.mjs';
 import { writeSequenceReport } from './sequence-report.mjs';
 
@@ -54,23 +56,43 @@ export function loadCheckResults({ root, checks }) {
         captured = Boolean(measurements.length) && measurements.every(o => o.composition.every(c => exists(evidenceRoot, c.image)));
       }
       const artworkObserved = check.category !== 'artwork' || visual.observations?.some(o => o.case.checkId === check.checkId && (o.case.checkpoint === p.id || o.case.expectedHud));
+      // Semantic frame labels and hashed source sheets are context, not pixel
+      // comparisons. Retained crop pairs can establish an actual mismatch. They
+      // do not establish complete pixel coverage for a passing checkpoint.
+      if (check.category === 'artwork') {
+        measurements = [];
+        if (!visual.error && artworkObserved && !missing.length) for (const file of images.filter(f => f.endsWith('-actual.png'))) {
+          const reference = path.resolve(evidenceRoot, file.replace(/-actual\.png$/, '-reference.png'));
+          const current = path.resolve(evidenceRoot, file);
+          if (!fs.existsSync(reference)) continue;
+          try {
+            const expected = PNG.sync.read(fs.readFileSync(reference)), actual = PNG.sync.read(fs.readFileSync(current));
+            const { difference, ...measurement } = compareImages(expected, actual);
+            measurements.push({ reference, current, dimensions: { width: actual.width, height: actual.height }, measurement,
+              provenance: 'Recomputed exact RGBA comparison of retained independent source crop and actual crop, equal native dimensions, no fitting or source modification' });
+          } catch (error) { measurements.push({ reference, current, unavailable: error.message }); }
+        }
+      }
       const observed = !trace || (p.observationIds ?? []).every(id => trace.rows?.some(r => r.id === id));
+      const artworkMismatch = check.category === 'artwork' && measurements.some(m => m.measurement?.whole.differingPixels > 0);
       const compared = ['pass','fail'].includes(p.status) && !missing.length && !traceError && !visual?.error && artworkObserved && observed
-        && (check.category === 'live' ? Boolean(trace) : captured && evidenceFiles.length > 0);
-      const imagesForContext = [...images, ...(measurements ?? []).map(m => m.image)];
+        && (check.category === 'live' ? Boolean(trace) : check.category === 'artwork' ? artworkMismatch : captured && evidenceFiles.length > 0);
+      const imagesForContext = [...images, ...(measurements ?? []).map(m => m.image).filter(Boolean)];
       const neighbors = [...new Set(imagesForContext.flatMap(file => {
         const match = file.match(/^(.*\/)(\d+)(?:-\d+-actual)?\.png$/);
         return match ? [-1, 0, 1].map(offset => `${match[1]}${Number(match[2]) + offset}.png`).filter(file => exists(evidenceRoot, file)) : [];
       }))];
-      return { ...p, captured, compared, ...(measurements ? { measurements } : {}),
+      return { ...p, captured, compared, ...(measurements ? { measurements } : {}), ...(artworkMismatch ? { status: 'fail' } : {}),
         ...(['artwork','compositing'].includes(check.category) ? { artifacts: { trace: path.resolve(evidenceRoot, evidenceFiles.find(f => f.endsWith('.json')) ?? 'native/observations.json'), neighbors,
           ...(check.category === 'compositing' ? { referenceSource: path.join(evidenceRoot, 'source/general.png'), current: measurements?.flatMap(m => m.composition.map(c => c.image)),
             expectedRasterUnavailable: 'Producer retained source sheet and numeric palette/boundary measurements, not an expected composite raster',
             differenceRasterUnavailable: 'No independent expected-composite raster; no difference image invented' } : {}) } } : {}),
         ...(!compared && ['pass','fail'].includes(p.status) ? { status: 'incomplete', reportedStatus: p.status,
-          reason: traceError ?? visual?.error ?? (missing.length ? `Missing evidence: ${missing.join(', ')}` : 'Required capture or evaluated observation evidence missing') } : {}) };
+          reason: traceError ?? visual?.error ?? (missing.length ? `Missing evidence: ${missing.join(', ')}` : check.category === 'artwork' ? 'No validated complete artwork pixel comparison; screenshot, source hashes and semantic observations cannot establish a pixel pass' : 'Required capture or evaluated observation evidence missing') } : {}) };
     });
-    return { ...check, evidenceRoot, checkpoints, ...(traceError ? { errors: [...(check.errors ?? []), traceError] } : {}) };
+    return { ...check, evidenceRoot, checkpoints,
+      ...(check.category === 'artwork' ? { reportedStatus: check.status, status: checkpoints.some(p => p.status === 'fail') ? 'fail' : 'incomplete' } : {}),
+      ...(traceError ? { errors: [...(check.errors ?? []), traceError] } : {}) };
   });
 }
 

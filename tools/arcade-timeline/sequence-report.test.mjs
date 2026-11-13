@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { requiredChecks } from './sequence-coverage.mjs';
 import { PNG } from 'pngjs';
+import { createHash } from 'node:crypto';
 
 const reporting = import('./sequence-report.mjs'); reporting.catch(() => {});
 const cli = import('./validate-sequences.mjs'); cli.catch(() => {});
@@ -88,6 +89,18 @@ test('group failure and capture dependency errors cannot hide behind passing che
   assert.equal(summary.passed, false);
 });
 
+test('a measured failure cannot make missing or unavailable checkpoints complete', async () => {
+  const { summarizeCoverage } = await reporting;
+  for (const tail of [[], [{ id: 'b', status: 'unavailable' }, { id: 'c', status: 'pass' }]]) {
+    const summary = summarizeCoverage(three, [result('full-screen:three', [{ id: 'a', status: 'fail' }, ...tail])]);
+    assert.equal(summary.groups['full-screen'].failed, 1);
+    assert.equal(summary.complete, false); assert.equal(summary.passed, false);
+  }
+  const checkpoints = ['a','b','c'].map(id => ({ id, status: id === 'a' ? 'fail' : 'pass' }));
+  assert.equal(summarizeCoverage(three, [result('full-screen:three', checkpoints)]).complete, true);
+  assert.equal(summarizeCoverage(three, [{ ...result('full-screen:three', checkpoints), status: 'fail', errors: ['capture interval interrupted'] }]).complete, false);
+});
+
 test('JSON and escaped static HTML retain measurements, explicit missing checks and artifact links', async t => {
   const { writeSequenceReport } = await reporting; const dir = temporary(t);
   const check = result('full-screen:three', [{ id: 'a', status: 'fail', reason: '<script>bad</script>', measurements: { whole: { differingPixels: 99 } }, artifacts: { reference: 'reference.png', current: 'current.png', difference: 'difference.png', neighbors: ['before.png','after.png'], trace: 'trace.json' } }]);
@@ -165,6 +178,32 @@ test('an artwork screenshot alone does not establish a source comparison', async
   assert.equal(check.checkpoints[0].captured, true);
   assert.equal(check.checkpoints[0].compared, false);
   assert.equal(check.checkpoints[0].status, 'incomplete');
+});
+
+test('source hashes and semantic observations cannot substitute for artwork pixel measurements', async t => {
+  const { loadCheckResults } = await cli; const dir = temporary(t);
+  fs.mkdirSync(path.join(dir, 'source')); fs.mkdirSync(path.join(dir, 'native'));
+  const image = PNG.sync.write(new PNG({ width: 16, height: 16 }));
+  fs.writeFileSync(path.join(dir, 'source/general.png'), image); fs.writeFileSync(path.join(dir, 'native/0.png'), image);
+  fs.writeFileSync(path.join(dir, 'provenance.json'), JSON.stringify({ sourceHashes: { general: createHash('sha256').update(image).digest('hex') } }));
+  fs.writeFileSync(path.join(dir, 'native/observations.json'), JSON.stringify([{ case: { checkId: 'artwork:mouth-right', checkpoint: 'frame-0' }, image: 'native/0.png', observation: { actors: ['pacman-right-0'] } }]));
+  const [check] = loadCheckResults({ root: dir, checks: [{ ...result('artwork:mouth-right', [{ id: 'frame-0', status: 'pass', evidence: ['native/0.png'] }], 'artwork'), status: 'pass' }] });
+  assert.equal(check.checkpoints[0].captured, true); assert.equal(check.checkpoints[0].compared, false);
+  assert.equal(check.checkpoints[0].status, 'incomplete'); assert.equal(check.status, 'incomplete');
+});
+
+test('retained independent artwork crop differences remain measured failures', async t => {
+  const { loadCheckResults } = await cli; const dir = temporary(t);
+  fs.mkdirSync(path.join(dir, 'source')); fs.mkdirSync(path.join(dir, 'native'));
+  const reference = new PNG({ width: 16, height: 16 }), actual = new PNG({ width: 16, height: 16 }); actual.data[0] = 255;
+  const source = PNG.sync.write(reference);
+  fs.writeFileSync(path.join(dir, 'source/general.png'), source);
+  fs.writeFileSync(path.join(dir, 'native/0-reference.png'), source); fs.writeFileSync(path.join(dir, 'native/0-actual.png'), PNG.sync.write(actual));
+  fs.writeFileSync(path.join(dir, 'provenance.json'), JSON.stringify({ sourceHashes: { general: createHash('sha256').update(source).digest('hex') } }));
+  fs.writeFileSync(path.join(dir, 'native/observations.json'), JSON.stringify([{ case: { checkId: 'artwork:ghost-red-up', checkpoint: 'foot-1' } }]));
+  const [check] = loadCheckResults({ root: dir, checks: [{ ...result('artwork:ghost-red-up', [{ id: 'foot-1', status: 'fail', evidence: ['native/0-actual.png'] }], 'artwork'), status: 'fail' }] });
+  assert.equal(check.checkpoints[0].compared, true); assert.equal(check.checkpoints[0].status, 'fail');
+  assert.equal(check.checkpoints[0].measurements[0].measurement.whole.differingPixels, 1);
 });
 
 test('repeated observation-file references retain measurements once', async t => {

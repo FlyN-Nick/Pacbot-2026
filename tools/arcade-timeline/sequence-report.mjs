@@ -64,16 +64,18 @@ export function summarizeCoverage(definitions, results) {
     });
     for (const r of rows) for (const p of r.checkpoints ?? []) if (!d.checkpoints.some(c => c.id === p.id)) issues.push({ checkId: d.id, checkpoint: p.id, reason: 'Checkpoint outside inventory' });
     let status = statusOf(checkpoints);
+    const unresolved = rows.some(r => ['unavailable', 'incomplete'].includes(r.status) || r.errors?.length || r.issues?.length);
     if (rows.some(r => r.status === 'fail')) status = 'fail';
     else if (status === 'pass' && rows.some(r => ['unavailable', 'incomplete'].includes(r.status) || r.errors?.length || r.issues?.length)) status = rows.some(r => r.status === 'unavailable') ? 'unavailable' : 'incomplete';
-    return { checkId: d.id, category: d.category, status, captured: checkpoints.some(p => p.captured), compared: checkpoints.length > 0 && checkpoints.every(p => p.compared), checkpoints };
+    return { checkId: d.id, category: d.category, status, complete: checkpoints.every(p => ['pass','fail'].includes(p.status)) && !unresolved,
+      captured: checkpoints.some(p => p.captured), compared: checkpoints.length > 0 && checkpoints.every(p => p.compared), checkpoints };
   });
   const categories = {}, groups = {};
   for (const category of new Set(definitions.map(d => d.category))) {
     const selected = entries.filter(e => e.category === category);
     categories[category] = count(selected.flatMap(e => e.checkpoints)); groups[category] = count(selected);
   }
-  return { categories, groups, complete: entries.every(e => ['pass','fail'].includes(e.status)) && !issues.length,
+  return { categories, groups, complete: entries.every(e => e.complete) && !issues.length,
     passed: entries.length > 0 && entries.every(e => e.status === 'pass') && !issues.length, entries, issues };
 }
 

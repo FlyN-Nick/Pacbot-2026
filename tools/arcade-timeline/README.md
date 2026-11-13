@@ -187,6 +187,12 @@ Composition producers retain source sheets, current images and numeric palette
 and boundary measurements. When no independent expected-composite raster exists,
 the report states that reference/difference rasters are unavailable rather than
 inventing them; measured failures remain failures.
+The expanded artwork producer's source hashes, screenshots and semantic frame
+observations establish capture context. They do not establish a pixel pass;
+unsupported artwork pass labels remain incomplete. Retained independent
+reference/current crop pairs are compared exactly and actual mismatches remain
+measured failures. Full passing pixel coverage requires validated comparisons
+for every required artwork checkpoint.
 
 Checkpoint totals come from `sequence-coverage.mjs`, independently of available
 files: initial has 8 groups / 46 checkpoints, full has 108 groups / 363 checkpoints.
