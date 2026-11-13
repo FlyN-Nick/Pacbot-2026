@@ -235,3 +235,45 @@ Known full-screen fidelity failures remain failures even when behavior assertion
 pass. `summarizeCoverage` and `writeSequenceReport` can separately report retained
 results; callers must label their original provenance. The production CLI always
 runs fresh producers and has no cached-results mode.
+
+### Mutation validation
+
+From `tools/arcade-timeline`:
+
+```sh
+npm run validate:mutations -- --out /absolute/path/to/empty-mutation-evidence
+```
+
+The runner copies tracked web/server/tooling files into disposable directories,
+links the already installed Node dependencies, and starts isolated servers with
+`GOWORK=off`. It excludes Git metadata, ROMs, ignored archives, build outputs and
+unrelated local artifacts. No source sheet extraction or MAME recording runs.
+Copies are removed after use; baseline/mutant traces, screenshots, process logs,
+mutation file hashes and the copy inventory remain in the output directory.
+Tracked source files and the existing durable Task 6 reference directory (when
+present) are hashed before and after the run.
+
+Five named mutations restore an open idle pose, ignore the captured death
+position, cancel death on bot resume, make transparent atlas backgrounds opaque,
+and restore contiguous source-sheet sampling without atlas gutters. Each proof
+requires its own healthy baseline assertion to pass and the mutant to fail the
+same assertion with its expected failure code. Setup/browser errors, missing
+observations, an already-failing baseline, and an unchanged passing result all
+fail the proof. The command exits nonzero unless all five proofs pass and input
+hashes are unchanged. Full-screen maze failures never count as detections.
+
+Idle and position checks reuse the real-server initial live observer. Bot resume
+uses the controlled bot channel and a real server death sequence; this is a
+control-race check, not a natural Python-bot collision claim. Alpha and gutter
+checks use a fixed right-open artwork frame on a colored map (native alpha;
+1000×700 viewport at device scale 2 for gutters). Exact frame overrides are
+confined to these artwork/compositing checks and do not prove frame selection.
+
+Task 8's retained run detected **four of five** mutations. The gutter mutation
+passed its baseline but also passed after mutation, so its proof failed. A bounded
+60-case diagnostic (five existing viewport sizes, four directions, three artwork
+frames) found no healthy pass-to-fail boundary case: 12 passed both and 48 failed
+both. Those existing boundary failures were not counted as detections. This
+limitation remains visible; the mutation command is expected to return nonzero
+on this implementation/environment. Passing behavior tests or four detections
+must not be presented as overall arcade fidelity or complete mutation coverage.
