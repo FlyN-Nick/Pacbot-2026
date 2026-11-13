@@ -8,6 +8,13 @@ test('replay inventory preserves every independent requirement when input entrie
  assert.deepEqual(index.sequences.map(x=>x.checkId),requiredChecks('initial').map(x=>x.id));
  assert.throws(()=>makeReplayIndex({version:2,scope:'initial',sequences:[{checkId:'x'},{checkId:'x'}]}),/duplicate|unknown/i);
 });
+test('requested initial replay filters full references without shrinking missing requirements',()=>{
+ const source={version:2,scope:'full',sequences:[{checkId:'full-screen:mouth-right',status:'recorded'}]};
+ const index=makeReplayIndex(source,'initial');
+ assert.equal(index.sequences.length,8);assert.equal(index.scope,'initial');assert.equal(index.referenceScope,'full');
+ assert.equal(index.sequences[0].status,'unavailable');
+ assert.throws(()=>makeReplayIndex({...source,sequences:[{checkId:'unknown'}]},'initial'),/unknown/i);
+});
 test('comparison really counts full-screen pixels and rejects declared dimension mismatch',()=>{
  const image=()=>({width:224,height:288,data:Buffer.alloc(224*288*4)}),a=image(),b=image();b.data[(280*224+210)*4]=255;
  const result=compareReplayImages(a,b,{width:224,height:288});

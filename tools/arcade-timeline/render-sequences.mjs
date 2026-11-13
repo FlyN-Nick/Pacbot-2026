@@ -17,11 +17,11 @@ function artifact(root,relative){
  if(typeof relative!=='string'||/[\\\u0000-\u001f:?"<>|#%]/.test(relative)||relative.split('/').some(p=>!p||p==='.'||p==='..'))throw Error('Unsafe artifact path');
  const file=fs.realpathSync(path.join(root,relative));if(!file.startsWith(fs.realpathSync(root)+path.sep))throw Error('Artifact outside root');return file;
 }
-export function makeReplayIndex(reference){
+export function makeReplayIndex(reference,scope=reference.scope){
  if(reference.version!==2||!Array.isArray(reference.sequences))throw Error('Invalid reference index');
  const definitions=requiredChecks(reference.scope),known=new Set(definitions.map(d=>d.id)),seen=new Set();
  for(const entry of reference.sequences){if(seen.has(entry.checkId)||!known.has(entry.checkId))throw Error('Duplicate or unknown reference entry');seen.add(entry.checkId);}
- return {version:2,scope:reference.scope,sequences:definitions.map(d=>({checkId:d.id,status:'unavailable',reason:'No controlled renderer producer or recorded reference'})),context:structuredClone(reference.context??[])};
+ return {version:2,scope,referenceScope:reference.scope,sequences:requiredChecks(scope).map(d=>({checkId:d.id,status:'unavailable',reason:'No controlled renderer producer or recorded reference'})),context:structuredClone(reference.context??[])};
 }
 export function deathClock(manifest){
  if(manifest.scenario!=='death-respawn')return {};
@@ -88,10 +88,10 @@ function contactSheets(out,folder,reference,actual){
  }
  write(path.join(out,folder,'contact-sheet.json'),index);
 }
-export async function renderSequences({reference,out}){
+export async function renderSequences({reference,out,scope}){
  reference=path.resolve(reference);out=path.resolve(out);
  fs.mkdirSync(out,{recursive:true});if(fs.readdirSync(out).length)throw Error('Output directory must be empty');
- const referenceIndex=read(path.join(reference,'index.json')),index=makeReplayIndex(referenceIndex);write(path.join(out,'index.json'),index);
+ const referenceIndex=read(path.join(reference,'index.json')),index=makeReplayIndex(referenceIndex,scope);write(path.join(out,'index.json'),index);
  fs.copyFileSync(new URL('./arcade-state-evidence.md',import.meta.url),path.join(out,'adapter-evidence.md'));
  fs.copyFileSync(new URL('./evidence/initial-adapter-observations.json',import.meta.url),path.join(out,'adapter-observations.json'));
  const cleanup=createCleanup();cleanup.installSignalHandlers();const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'sequence-replay-'));cleanup.add(()=>fs.rmSync(tmp,{recursive:true,force:true}));

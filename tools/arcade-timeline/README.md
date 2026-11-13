@@ -89,7 +89,7 @@ PACMAN_ROM_DIR=~/roms npm run record:sequences -- --scope full --out /tmp/sequen
 
 The output directory must be empty. The recorder verifies the external `pacman` ROM set and requires the measured MAME 0.289 callback behavior. It records READY → initial movement and a natural, untouched-joystick collision away from spawn → death → next-life READY → movement. There are no gameplay-memory writes in these scenarios. The legacy timeline and v1 capture commands retain their behavior; per-frame recording is opt-in through `ARCADE_SEQUENCE_DIR`.
 
-`index.json` is `{version:2,scope,sequences:[{checkId,status,manifest?,reason?}],context:[]}`. Status is `recorded`, `unavailable`, or `incomplete`, never a comparison result. Initial scope lists all eight inventory definitions: two full-screen recordings and six explicitly unavailable live producers. Full scope lists all 108 definitions; only the two initial full-screen producers are implemented here. Exit 0 means **requested renderer recording complete**, not validation passed. Live/compositing placeholders are outside this recorder's exit denominator; missing full-screen/artwork producers in full scope cause exit 1. Missing dependencies and incomplete captures also exit 1.
+`index.json` is `{version:2,scope,sequences:[{checkId,status,manifest?,reason?}],context:[]}`. Status is `recorded`, `unavailable`, or `incomplete`, never a comparison result. Initial scope lists all eight inventory definitions: two full-screen recordings and six explicitly unavailable live producers. Full scope lists all 108 definitions and attempts the expanded source-state producers described below; unreached or unsupported states remain unavailable. Exit 0 means **requested renderer recording complete**, not validation passed. Live/compositing placeholders are outside this recorder's exit denominator; missing full-screen/artwork producers in full scope cause exit 1. Missing dependencies and incomplete captures also exit 1.
 
 All paths in manifests, evidence, and calibration files are relative to the directory containing `index.json`, including paths in a nested `start/manifest.json` or `death/manifest.json`. Each scenario retains:
 
@@ -148,3 +148,84 @@ runner; it never runs in the MAME fidelity pipeline. Actual computed grid color
 must settle after CSS transitions. These categories cannot satisfy full-screen
 fidelity. `--display fractional` selects that display while keeping other
 required entries explicitly incomplete.
+
+### Combined sequence validation
+
+From `tools/arcade-timeline`, after recording independent references:
+
+```sh
+PACMAN_ROM_DIR=~/roms npm run record:sequences -- --scope initial --out /path/to/reference-initial
+npm run validate:sequences -- --scope initial --suite renderer --reference /path/to/reference-initial --out /path/to/report-initial
+npm run validate:sequences -- --scope initial --suite live --reference /path/to/reference-initial --out /path/to/report-live
+PACMAN_ROM_DIR=~/roms npm run record:sequences -- --scope full --out /path/to/reference-full
+npm run validate:sequences -- --scope full --suite all --reference /path/to/reference-full --out /path/to/report-full
+```
+
+Scopes are `initial|full`; suites are `renderer|live|all`. Defaults are `initial`
+and `all`; `--reference` and `--out` are required. Renderer runs fresh controlled
+native full-screen replay and, in full scope, separate archived source-sheet
+artwork/compositing checks. Live runs fresh isolated real-server observations in
+both modes. Initial live covers waiting, READY and death; full live additionally
+runs expanded transitions, control races and the actual Python AStar simulation.
+Full runs can take several minutes. `all` runs both suites. Supplying full
+references to initial scope captures only the initial inventory; original and
+requested scopes remain in the replay index. Live accepts the reference argument
+for a uniform command contract but does not read it or claim MAME fidelity.
+Validation never records or overwrites references.
+
+Use an empty output directory separate from the reference directory; neither may
+contain the other. The CLI writes `report.json`, a static `index.html`, and each
+producer's artifacts in a separate subdirectory. Open HTML to inspect each
+required checkpoint, incomplete entries, errors and evidence links. JSON retains
+raw pixel counts/regions, composition measurements and original producer results.
+Reference/current/difference images, neighboring images, source alignment records
+and live traces remain linked. Relative links into inherited evidence require
+retaining that evidence directory as well as the report.
+For retained artwork crop pairs, exact difference PNGs are derived into the
+report directory with explicit provenance; source artifacts are unchanged.
+Composition producers retain source sheets, current images and numeric palette
+and boundary measurements. When no independent expected-composite raster exists,
+the report states that reference/difference rasters are unavailable rather than
+inventing them; measured failures remain failures.
+
+Checkpoint totals come from `sequence-coverage.mjs`, independently of available
+files: initial has 8 groups / 46 checkpoints, full has 108 groups / 363 checkpoints.
+Both checkpoint and grouped tables show required, captured, compared, passed,
+failed, unavailable and incomplete counts. A group passes only when every
+required checkpoint passes and the producer has no unresolved error. Live
+process/config/cleanup assertions can be evaluated without an associated
+screenshot, so compared can exceed captured in that category. Screenshots,
+matching IDs and valid manifests alone establish no passing comparison.
+Identical results are deduplicated; contradictory duplicates, unmatched states,
+unknown IDs and category mismatches are non-pass. Artwork, live and composition
+passes cannot satisfy full-screen checks.
+Grouped captured means at least one required checkpoint has capture evidence;
+grouped compared requires evaluation of every required checkpoint.
+
+The requested suite controls the exit decision: exit 0 requires every requested
+check to pass; failed, unavailable, incomplete and producer/integrity errors exit
+1. Other scope categories stay visible as explicitly unrequested incomplete
+entries. Top-level `passed`/`complete` and `requestedCoverage` describe the
+requested suite; `coverage` describes the entire scope. Each producer is attempted
+independently, so missing browser, source-sheet, Go or Python dependencies do not
+hide later results. Usable partial indexes remain included. Reports are written
+for producer failures and missing references; invalid arguments or an unwritable
+or nonempty output directory cannot always produce one.
+
+Prerequisites: Node 22+, installed tool dependencies, Chrome or Playwright
+Chromium, Go and the built web visualizer (`cd web_client && npm install && npm
+run build`). Full live additionally requires the bot's configured Python venv
+and dependencies. Full renderer needs the original archived sheets in
+`.local-assets/sprites`; originals stay read only and source hashes/copies are
+retained. Reference regeneration requires MAME 0.289 and the verified external
+`pacman` ROM. Keep ROMs outside the repository. Servers use isolated free ports
+and cleanup; default live ports and the working checkout configuration stay intact.
+
+Only the identified interactive control overlay `[data-game-controls]` is hidden
+for renderer/display capture, explicitly recorded in provenance; live traces
+record their own exclusions. Maze, actors, HUD and footer remain measured. No
+pixel tolerances, masks, per-actor fitting or frame overrides obtain passes.
+Known full-screen fidelity failures remain failures even when behavior assertions
+pass. `summarizeCoverage` and `writeSequenceReport` can separately report retained
+results; callers must label their original provenance. The production CLI always
+runs fresh producers and has no cached-results mode.
