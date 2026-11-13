@@ -18,3 +18,9 @@ test('pixel composition rejects opaque black and neighboring artwork at display 
 });
 test('artwork mouth cycle retains every native cadence phase through repeated boundary',async()=>{const{artworkCases}=await api;const phases=artworkCases().filter(c=>c.checkId==='artwork:mouth-left').map(c=>c.phase);assert.deepEqual(phases,Array.from({length:17},(_,i)=>i*16.5));});
 test('sprite gutter boundary scan catches a same-palette neighbor but ignores interior artwork',async()=>{const m=await api;assert.equal(typeof m.countBoundaryPixels,'function');const p={width:3,height:3,data:new Uint8Array(36)};p.data[16]=255;assert.equal(m.countBoundaryPixels(p,(r)=>r===255),0);p.data[0]=255;assert.equal(m.countBoundaryPixels(p,(r)=>r===255),1);});
+test('empty HUD or banner composition cannot pass any display boundary checkpoint',async()=>{
+ const{compositionBoundaryStatus}=await api;assert.equal(typeof compositionBoundaryStatus,'function');
+ assert.equal(compositionBoundaryStatus([]),'incomplete');
+ assert.equal(compositionBoundaryStatus([{stats:{unexpected:0}}]),'pass');
+ assert.equal(compositionBoundaryStatus([{stats:{unexpected:1}}]),'fail');
+});

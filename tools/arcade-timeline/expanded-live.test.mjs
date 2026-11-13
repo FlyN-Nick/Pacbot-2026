@@ -43,3 +43,29 @@ test('expanded manifest screenshot evidence resolves beside its trace',async()=>
  const check={mode:'arcade',scenario:'last-life-death',checkpoints:[]},capture={id:'a',image:'a.png',dimensions:{width:224,height:288},before:row(0),after:row(1)};
  assert.deepEqual(makeLiveManifest(check,[capture],'trace.json','screenshots.json').samples[0].alignment.evidence,['screenshots.json','trace.json']);
 });
+test('competition level continuation cannot borrow ticks before its paused next-level reset',async()=>{
+ const rows=[row(0),row(1),row(2,{}, {level:2,mode:0,tick:2}),row(3,{}, {level:2,mode:0,tick:2})];
+ const extra={mode:'competition',events:[{type:'driver',name:'last-pellet',at:0}]};
+ assert.equal(point(await evaluate('level-completion',rows,extra),'continuation-policy').status,'incomplete');
+ extra.events.push({type:'command',command:'P',source:'driver:expanded-scenario',at:70});
+ assert.equal(point(await evaluate('level-completion',rows,extra),'continuation-policy').status,'incomplete','command alone is not progression');
+ rows.push(row(4,{}, {level:2,mode:1,tick:3}),row(5,{}, {level:2,mode:1,tick:4}));
+ assert.equal(point(await evaluate('level-completion',rows,extra),'continuation-policy').status,'pass');
+ extra.events[1].source='sequence:levelComplete';
+ assert.equal(point(await evaluate('level-completion',rows,extra),'continuation-policy').status,'fail');
+});
+test('progression before an external resume cannot satisfy competition continuation',async()=>{
+ const rows=[row(0),row(1,{}, {level:2,tick:10}),row(2,{}, {level:2,tick:11}),row(3,{}, {level:2,mode:0,tick:11}),row(4,{}, {level:2,mode:0,tick:11})];
+ const extra={mode:'competition',events:[{type:'driver',name:'last-pellet',at:0},{type:'command',command:'P',source:'driver:expanded-scenario',at:70}]};
+ assert.equal(point(await evaluate('level-completion',rows,extra),'continuation-policy').status,'incomplete');
+});
+test('retained competition trace passes only with its external resume and subsequent progression',async()=>{
+ const fs=await import('node:fs'),trace=JSON.parse(fs.readFileSync(new URL('./evidence/competition-level-continuation.json',import.meta.url)));
+ const{evaluateExpandedTrace}=await loaded;
+ assert.equal(evaluateExpandedTrace(trace).status,'pass');
+ const resume=trace.events.find(e=>e.type==='command'&&e.command==='P'&&e.source==='driver:expanded-scenario');
+ assert.ok(resume);
+ const truncated={...trace,rows:trace.rows.filter(r=>r.at<resume.at),events:trace.events.filter(e=>e.at<resume.at)};
+ assert.deepEqual(truncated.rows.at(-1).server,{level:2,mode:0,tick:110});
+ assert.equal(point(evaluateExpandedTrace(truncated),'continuation-policy').status,'incomplete');
+});

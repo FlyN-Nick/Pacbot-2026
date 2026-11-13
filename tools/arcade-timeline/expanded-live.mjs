@@ -44,10 +44,18 @@ export function evaluateExpandedTrace(trace) {
   const next=after.find(r=>before&&r.server.level>before.server.level);
   const ready=after.find(r=>r.render.ready),interval=after.filter(r=>!ready||r.at<=ready.at);
   if(trace.mode==='competition') {
-   if(next&&new Set(after.map(r=>r.server.tick)).size>1)put('maze-flashes',!commands.length,'Competition skips presentation maze flashes and progresses without sequence holds.',after);
-  } else if(next&&dense(interval))put('maze-flashes',interval.filter((r,i)=>r.render.maze==='white'&&interval[i-1]?.render.maze!=='white').length>=2,'Multiple visible white/blue maze transitions before next level.',interval);
+   // Earlier level ticks and the reset itself cannot prove continuation. The
+   // server-owned pause needs an explicitly observed external resume followed
+   // by active progression on the new level; presentation commands never qualify.
+   const resumed=events.find(e=>next&&e.type==='command'&&e.command==='P'&&e.at>=next.at&&/^(driver:|bot:|user:|manual$)/.test(e.source??''));
+   const active=after.filter(r=>resumed&&r.at>resumed.at&&r.server.level===next.server.level&&r.server.mode!==0);
+   const progressed=active.some((r,i)=>i>0&&r.server.tick>active[i-1].server.tick);
+   if(next&&(commands.length||progressed))for(const id of ['maze-flashes','continuation-policy'])put(id,!commands.length&&progressed,'Competition requires external resume and subsequent active next-level progression, with no presentation hold/resume commands.',active.length?active:after);
+  } else {
+   if(next&&dense(interval))put('maze-flashes',interval.filter((r,i)=>r.render.maze==='white'&&interval[i-1]?.render.maze!=='white').length>=2,'Multiple visible white/blue maze transitions before next level.',interval);
+   if(next&&after.length>1)put('continuation-policy',Boolean(ready)&&commands.some(e=>e.command==='P'&&e.at>=last.at),'Arcade READY and release.',after);
+  }
   sample('next-level',next,'Received level increases.');
-  if(next&&after.length>1)put('continuation-policy',trace.mode==='competition'?!commands.length&&new Set(after.map(r=>r.server.tick)).size>1:Boolean(ready)&&commands.some(e=>e.command==='P'&&e.at>=last.at),'Arcade READY and release; competition positive progression with no presentation holds.',after);
  }
  const checkpoints=definition.checkpoints.map(p=>found.get(p.id)??{id:p.id,status:'incomplete',reason:'Required visible transition or complete observation interval not reached.',observationIds:[]});
  return {checkId:definition.id,category:'live',scenario:trace.scenario,mode:trace.mode,checkpoints,status:checkpoints.some(c=>c.status==='fail')?'fail':checkpoints.every(c=>c.status==='pass')?'pass':'incomplete'};

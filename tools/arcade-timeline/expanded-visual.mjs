@@ -24,6 +24,7 @@ export function artworkCases(){
  for(const d of requiredChecks('full').filter(d=>d.category==='artwork'&&d.hud))result.push({checkId:d.id,checkpoint:'hud',name:d.scenario,state:{...d.hud,pellets:blankPellets()},phase:0,expectedFrames:[],expectedHud:hudExpectations[d.hud.name]});
  return result;
 }
+export function compositionBoundaryStatus(composition){return !composition.length?'incomplete':composition.every(c=>c.stats.unexpected===0)?'pass':'fail';}
 export function inspectComposition(png,palette){let background=0,foreground=0,unexpected=0;for(let i=0;i<png.data.length;i+=4){const rgb=[...png.data.subarray(i,i+3)].join(',');if(rgb==='18,120,90'&&png.data[i+3]===255)background++;else if(palette.has(rgb)&&png.data[i+3]===255)foreground++;else unexpected++;}return{background,foreground,unexpected};}
 const sourceFiles={general:'Arcade - Pac-Man - Miscellaneous - General Sprites.png',text:'Arcade - Pac-Man - Miscellaneous - Text.png',hud:'Arcade - Pac-Man - Miscellaneous - Attract Mode & HUD Assets.png',punctuation:'Arcade - Pac-Man - Miscellaneous - All Assets_Palettes.png'};
 // Independent extraction coordinates from the archived user source sheets.
@@ -87,7 +88,7 @@ export async function runExpandedVisual({outDir,sourceDir=path.resolve(import.me
     for(let n=0;n<await actors.count();n++) {const frame=await actors.nth(n).getAttribute('data-frame'),expected=reference(frame,sources,[18,120,90]),palette=new Set();for(let i=0;i<expected.data.length;i+=4){const rgb=[...expected.data.subarray(i,i+3)].join(',');if(rgb!=='18,120,90')palette.add(rgb);}const composed=PNG.sync.read(await actors.nth(n).screenshot({path:path.join(dir,`${index}-colored-${n}.png`)})),stats=inspectComposition(composed,palette);const boundaryPixels=countBoundaryPixels(composed,(r,g,b)=>r!==18||g!==120||b!==90);composition.push({frame,image:`${display.id}/${index}-colored-${n}.png`,stats,boundaryPixels,sha256:sha(PNG.sync.write(composed))});valid&&=stats.unexpected===0;gutters&&=boundaryPixels===0;totalBackground+=stats.background;totalForeground+=stats.foreground;}
     observations.at(-1).composition=composition;
     const evidence=`${display.id}/observations.json`;
-    record(`compositing:sprite-boundaries:${display.id}`,group,group==='hud-glyphs'&&display.id!=='native'?'incomplete':valid?'pass':'fail',evidence,group==='hud-glyphs'&&display.id!=='native'?'Scaled HUD glyph boundary pixel comparison not implemented; screenshots retained.':'Visible sprites use only source foreground and colored-map background.');
+    record(`compositing:sprite-boundaries:${display.id}`,group,compositionBoundaryStatus(composition),evidence,!composition.length?'No colored composition pixels measured for this checkpoint; source crops and screenshots do not establish composition.':'Visible sprites use only source foreground and colored-map background.');
     if(await actors.count()) {
      record(`compositing:colored-map-alpha:${display.id}`,'transparent-background',valid&&totalBackground>0?'pass':'fail',evidence,'Colored map is visible through sprite background.');
      record(`compositing:colored-map-alpha:${display.id}`,'opaque-foreground',valid&&(c.expectedFrames[0]==='blank'||totalForeground>0)?'pass':'fail',evidence,'Foreground remains an opaque source color.');
