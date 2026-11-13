@@ -350,7 +350,12 @@
         deathEventId = ++deathCount;
         dying = true;
         clearTimeout(dyingTimer);
-        dyingTimer = setTimeout(() => { dying = false; }, GUI_TIMINGS.deathAnimationMs);
+        dyingTimer = setTimeout(() => {
+          dying = false;
+          // Later ghost-eaten/level-clear remounts must not replay this death.
+          deathEventId = null;
+          deathPosition = null;
+        }, GUI_TIMINGS.deathAnimationMs);
         if ($visualizerMode === 'arcade') ghostsHidden = true;
         audioController.play('death');
         recordDeathFrames();
@@ -486,6 +491,9 @@
       ghosts: frame.ghosts.map(position),
       fruit: position(frame.fruit),
     }), frame, latestFrame);
+    // Terminal cleanup precedes deathStart: even a cached audio buffer loads
+    // asynchronously, so stopping afterward would cancel the final death cue.
+    if (events.some(event => event.type === 'gameOver')) audioController.stopAll();
     for (const event of events) {
       if (event.type === 'fruitEaten') {
         const type = fruitTypeForLevel(frame.level);
@@ -506,7 +514,6 @@
         const pacmanRemoved = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) !== 0;
         runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
       }
-      if (event.type === 'gameOver') audioController.stopAll();
       if (event.type === 'levelChanged') {
         timeline.anchor('levelCleared');
         clearGhostEaten();
@@ -1234,7 +1241,9 @@
 
   // Handle key presses, to send responses back to the server
   const handleKeyDown = (event) => {
-    if (event.target?.closest?.('button, input, select, textarea, a, [contenteditable], [role="button"], [role="slider"]')) return;
+    // Maze cells are the game surface; keep shortcuts after selecting a cell.
+    // HUD/form controls retain their native keyboard activation and editing.
+    if (event.target?.closest?.('button:not(.grid-element), input, select, textarea, a, [contenteditable], [role="button"], [role="slider"]')) return;
 
     // Retrieve the key information
     const key = event.code === 'Space' ? ' ' : event.key;

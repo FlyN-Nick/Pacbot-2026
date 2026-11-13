@@ -18,12 +18,26 @@ export function freePort() {
 export function createCleanup() {
   const steps = [];
   let running = null;
+  let completed = false;
+  let signalHandler = null;
+  const signals = ['SIGINT', 'SIGTERM'];
+
+  function disposeSignalHandlers() {
+    if (!signalHandler) return;
+    for (const signal of signals) process.off(signal, signalHandler);
+    signalHandler = null;
+  }
 
   // Later calls (from a signal or a finally block) wait for the same run.
   function run() {
     running ??= (async () => {
-      for (const step of steps.reverse()) {
-        try { await step(); } catch { /* Keep cleaning up after a failed step. */ }
+      try {
+        for (const step of steps.reverse()) {
+          try { await step(); } catch { /* Keep cleaning up after a failed step. */ }
+        }
+      } finally {
+        completed = true;
+        disposeSignalHandlers();
       }
     })();
     return running;
@@ -33,13 +47,15 @@ export function createCleanup() {
     add(step) { steps.push(step); },
     run,
     installSignalHandlers() {
-      // Stay installed, so a second Ctrl+C can't interrupt cleanup.
-      for (const signal of ['SIGINT', 'SIGTERM']) {
-        process.on(signal, async () => {
-          await run();
-          process.exit(130);
-        });
-      }
+      if (completed || signalHandler) return disposeSignalHandlers;
+      // Repeated signals await the same teardown. A completed producer must
+      // relinquish ownership before the next producer installs its handlers.
+      signalHandler = async () => {
+        await run();
+        process.exit(130);
+      };
+      for (const signal of signals) process.on(signal, signalHandler);
+      return disposeSignalHandlers;
     },
   };
 }
