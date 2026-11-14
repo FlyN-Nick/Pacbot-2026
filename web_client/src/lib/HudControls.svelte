@@ -13,7 +13,7 @@
   <ArcadeButton {gridSize} text="RESET" label="Reset" on:click={() => dispatch('reset')} />
 </div>
 <div data-game-controls class="pocket right" role="group" aria-label="Sound and mode controls" style:--unit="{gridSize}px">
-  <ArcadeButton {gridSize} text={audioEnabled ? 'SOUND' : 'MUTE'} label={audioEnabled ? 'Mute game audio' : 'Unmute game audio'} pressed={audioEnabled} color={audioEnabled ? 'yellow' : 'white'} on:click={() => dispatch('audio')} />
+  <ArcadeButton {gridSize} text={audioEnabled ? 'MUTE' : 'SOUND'} label={audioEnabled ? 'Mute game audio' : 'Unmute game audio'} pressed={audioEnabled} color={audioEnabled ? 'yellow' : 'white'} on:click={() => dispatch('audio')} />
   <ArcadeButton {gridSize} text={mode === 'arcade' ? 'ARCADE' : 'COMP'} label={mode === 'arcade' ? 'Arcade mode' : 'Competition mode'} pressed={mode === 'arcade'} color={mode === 'arcade' ? 'yellow' : 'white'} on:click={() => dispatch('mode', mode === 'arcade' ? 'competition' : 'arcade')} />
 </div>
 
