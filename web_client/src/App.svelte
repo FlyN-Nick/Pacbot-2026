@@ -45,12 +45,14 @@
   let visualFixture=null;
   let animationPhase=0;
   let highScore=0;
+  import { createHighScore } from './lib/highScore.js';
+  const highScoreStore=createHighScore({target:window,onChange:score=>highScore=score});
   let lastAnimationTime=performance.now();
   const animationTimer=setInterval(()=>{const now=performance.now();if(!displayFrozen&&(!readyVisible||pacmanMoving)&&!allActorsHidden&&pacmanActive)animationPhase+=now-lastAnimationTime;lastAnimationTime=now;},16);
   createVisualCapture(window.location.search,window,fixture=>visualFixture=fixture);
   $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
-  $: highScore=Math.max(highScore,currScore);
-  onDestroy(()=>{clearInterval(animationTimer);delete window.__arcadeVisual;delete window.__arcadePauseTrace;});
+  $: highScoreStore.record(currScore);
+  onDestroy(()=>{highScoreStore.destroy();clearInterval(animationTimer);delete window.__arcadeVisual;delete window.__arcadePauseTrace;});
   import HudControls from './lib/HudControls.svelte';
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
