@@ -12,6 +12,32 @@
 -- see recorder.lua.
 
 return {
+  -- Painted capture ranges, probed 2026-11-10 on verified MAME 0.289 pacman.
+  -- Source: mamedev/mame tag mame0289, pacman.cpp / pacman_v.cpp.
+  -- These are RAM or write-only ports; visual-state.lua never exports ROM.
+  visual = {
+    video = { first = 0x4000, last = 0x43ff },
+    color = { first = 0x4400, last = 0x47ff },
+    attributes = { first = 0x4ff0, last = 0x4fff },
+    coordinates = { first = 0x5060, last = 0x506f }, -- write tap ONLY
+    flip = 0x5003, -- write tap; upright run observed 0
+    -- First byte observed 00,10,20,...,70 hex with painted 00,10,...,70.
+    -- Little-endian packed-BCD interpretation beyond 70 NOT probed here;
+    -- keep four raw bytes, including the unclassified fourth byte.
+    score = { first = 0x4e80, last = 0x4e83 },
+    highScore = { first = 0x4e88, last = 0x4e8b },
+    level = 0x4e13, -- observed 0 on first/cherry board; later levels unverified
+  },
+  -- Hardware attribute byte: code = byte >> 2; low bits are raw pre-rotation
+  -- flip flags. Normal slots 1..5 (zero-based): red/pink/cyan/orange/yellow,
+  -- colors 1/3/5/7/9. Slots reorder in other states; do not assume universal IDs.
+  -- Upright 16x16 sprite top-left: x=240-coordinate[2*slot]-(slot<=2 and 1 or 0),
+  -- y=272-coordinate[2*slot+1]. Logical actor RAM leads hardware paint during
+  -- movement. At painted frame662 actorRAM=(196,130), slot5 ports=(136,68),
+  -- giving top-left=(104,204), observed yellow bounding box=(105,205)..(117,217).
+  -- Closed attribute194/code48 has137 yellow pixels. Initial left motion uses
+  -- attrs194/186/178/186/194 (codes48/46/44/46/48); death uses208..248 then252
+  -- (codes52..62 then blank63). These observations do not classify other poses.
   -- Game state
   mainState = 0x4E00,   -- 1 attract mode, 2 credit inserted, 3 playing (seen 297, 304, 541)
   subState = 0x4E04,    -- play sub-state: 0-2 setup, 3 actors moving (661), 12 level cleared (670),

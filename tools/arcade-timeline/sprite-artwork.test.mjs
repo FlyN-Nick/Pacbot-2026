@@ -1,0 +1,22 @@
+import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import{PNG}from'pngjs';import{catalog}from'../../web_client/src/lib/sprites/catalog.js';
+const sheet=PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/general.png',import.meta.url)));
+const yellow=(frame,x,y)=>{const f=catalog[frame],i=((f.y+y)*sheet.width+f.x+x)*4;return sheet.data[i]===255&&sheet.data[i+1]===255&&sheet.data[i+2]===0;};
+test('directional artwork puts the open mouth on the travel side',()=>{assert.equal(yellow('pacman-right-0',3,7),true);assert.equal(yellow('pacman-right-0',12,7),false);assert.equal(yellow('pacman-left-0',12,7),true);assert.equal(yellow('pacman-left-0',3,7),false);assert.equal(yellow('pacman-up-0',7,3),false);assert.equal(yellow('pacman-down-0',7,12),false);});
+
+test('sprite and glyph sheets have transparent black backgrounds and opaque colored pixels',()=>{
+ for(const name of ['general.png','text.png','life.png','punctuation.png']){
+ const image=PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/'+name,import.meta.url)));
+ let transparent=0,foreground=0;for(let i=0;i<image.data.length;i+=4){const black=image.data[i]===0&&image.data[i+1]===0&&image.data[i+2]===0;if(black){assert.equal(image.data[i+3],0,`${name} has opaque black background`);transparent++;}else{assert.equal(image.data[i+3],255);foreground++;}}
+ assert.ok(transparent>0&&foreground>0);
+ }
+});
+
+test('rendered frames have transparent gutters so scaling cannot sample neighboring art',()=>{
+ const images=new Map();
+ for(const [name,frame]of Object.entries(catalog)){
+ const render=frame.render??frame;
+ if(!images.has(render.asset))images.set(render.asset,PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/'+render.asset,import.meta.url))));
+ const image=images.get(render.asset);
+ for(let y=-2;y<frame.height+2;y++)for(let x=-2;x<frame.width+2;x++)if(x<0||y<0||x>=frame.width||y>=frame.height){const px=render.x+x,py=render.y+y;if(px>=0&&py>=0&&px<image.width&&py<image.height)assert.equal(image.data[(py*image.width+px)*4+3],0,`${name} samples adjacent artwork`);}
+ }
+});

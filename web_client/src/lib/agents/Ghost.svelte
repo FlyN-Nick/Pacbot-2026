@@ -1,91 +1,14 @@
-<style>
-
-  /* Ghost SVG Sprite */
-  .ghost-svg {
-    position: absolute;
-    width:  calc(var(--grid-size) + 2 * var(--pad));
-    height: calc(var(--grid-size) + 2 * var(--pad));
-    transform-origin: top left;
-  }
-
-  .ghost-svg.returning {
-    animation: return-home 650ms ease-in-out both;
-    z-index: 4;
-  }
-
-  @keyframes return-home {
-    from { transform: translate3d(var(--return-from-x), var(--return-from-y), 0) scale(1.5); }
-    to { transform: translate3d(var(--return-to-x), var(--return-to-y), 0) scale(1.5); }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ghost-svg.returning { animation-duration: 1ms; }
-  }
-
-  /* Blinky */
-  path.red { fill: red; }
-
-  /* Pinky */
-  path.pink { fill: hotpink; }
-
-  /* Inky */
-  path.cyan { fill: turquoise; }
-
-  /* Clyde */
-  path.orange { fill: orange; }
-
-  /* Blue body - frightened */
-  path.blue {fill: blue; }
-
-  /* White mouth - frightened */
-  path.white { fill: white; }
-
-  /* Outlined body - frightened */
-  path.outlined { stroke: var(--color); stroke-width: var(--pad); }
-
-  /* Transparent - not frightened */
-  path.transparent { fill: transparent; }
-
-  /* Sclera (also iris when frightened) */
-  ellipse.white {
-    fill: white;
-  }
-
-  /* Transparent sclera */
-  ellipse.transparent {
-    fill: transparent;
-  }
-
-  /* White sclera outline (frightened) - unused */
-  .s-white {
-    stroke: white;
-    stroke-width: calc(0.3 * var(--pad));
-  }
-
-  /* White sclera outline (frightened, recovering) - unused */
-  .s-red {
-    stroke: red;
-    stroke-width: calc(0.3 * var(--pad));
-  }
-
-  /* Iris */
-  ellipse.blue {
-    fill: blue;
-  }
-
-  /* Iris (frightened, recovering) */
-  ellipse.red {
-    fill: red;
-  }
-
-</style>
-
 <script>
+  import Sprite from '../sprites/Sprite.svelte';
+  import {selectGhostFrame,directionFor} from '../sprites/frames.js';
   import { onDestroy } from 'svelte';
   import { getGhostVisualState } from '../characterAnimations.js';
 
   // Grid size, same as for other components
   export let gridSize;
+  export let phase=0;
+  export let frameOverride=null;
+  export let nativeState=null;
 
   // Manually specified color for this ghost
   export let color;
@@ -119,8 +42,6 @@
   export let modTicks;
   export let updatePeriod;
 
-  // Padding for frightened ghost sprite
-  $: pad = gridSize/20
 
   // Control whether ghosts look like they are fluidly moving
   const showMotion = true;
@@ -160,110 +81,23 @@
                         ((updatePeriod - modTicks) / (updatePeriod) / 2) : (1/2)
                       ) : 0
 
-  // Keep state decoding independent of the SVG shapes.
+  // State decoding is shared with timing instrumentation.
   $: visual = getGhostVisualState(returning ? 0x80 : trappedState, frightState, modTicks, updatePeriod);
-  $: returnPad = pad + 0.25 * (gridSize + 2 * pad);
 
+$: spriteFrame=nativeState ? selectGhostFrame({...nativeState,direction:nativeState.facing,phase:nativeState.footPhase}) : frameOverride??selectGhostFrame({color,direction:directionFor(dirX,dirY),phase:Math.floor(phase/132),...visual});
+  $: x=(posX+showMotion*(dirX*modTicks/updatePeriod)+spawnOffsetX)*gridSize+gridSize/2;
+  $: y=(posY+showMotion*(dirY*modTicks/updatePeriod)+spawnOffsetY)*gridSize+gridSize/2;
 </script>
-
-<!-- SVG Sprite of Ghost -->
-{#if showGhost || returning}
-  {#key returning ? seenReturnEventId : 'server'}
-  <svg
-    class='ghost-svg'
-    class:returning
-    style:--grid-size='{~~gridSize+1}px'
-    style:--color={color}
-    style:--pad='{pad}px'
-    style:--return-from-x='{returnFromCol * gridSize - returnPad}px'
-    style:--return-from-y='{returnFromRow * gridSize - returnPad}px'
-    style:--return-to-x='{returnTarget[1] * gridSize - returnPad}px'
-    style:--return-to-y='{returnTarget[0] * gridSize - returnPad}px'
-    style:top='0'
-    style:left='0'
-    style:transform='translate3d({(posX + showMotion*(dirX*modTicks/updatePeriod) + spawnOffsetX) *
-                          gridSize - pad - 0.25 * (gridSize + 2 * pad)}px,
-                          {(posY + showMotion*(dirY*modTicks/updatePeriod) + spawnOffsetY) *
-                          gridSize - pad - 0.25 * (gridSize + 2 * pad)}px, 0) scale(1.5)'
-  >
-
-    <!-- Body of ghost -->
-    {#if !visual.eaten && visual.spriteTwo}
-      <path
-        d=' M {pad} {pad + gridSize/2}
-            A {gridSize/2} {gridSize/2} 0 0 1 {pad + gridSize} {gridSize/2}
-            L {pad + gridSize} {pad + gridSize}
-            L {pad + 0.72 * gridSize} {pad + 0.9 * gridSize}
-            L {pad + 0.50 * gridSize} {pad +       gridSize}
-            L {pad + 0.26 * gridSize} {pad + 0.9 * gridSize}
-            L {pad + 0    * gridSize} {pad +       gridSize}
-            z'
-        class={visual.frightened ? (visual.flashing ? 'white outlined' : 'blue outlined') : color}
-      />
-    {:else if !visual.eaten}
-      <path
-        d=' M {pad} {pad + gridSize/2}
-            A {gridSize/2} {gridSize/2} 0 0 1 {pad + gridSize} {gridSize/2}
-            L {pad + gridSize} {pad + gridSize}
-            L {pad + 0.82 * gridSize} {pad + 0.9 * gridSize}
-            L {pad + 0.67 * gridSize} {pad +       gridSize}
-            L {pad + 0.50 * gridSize} {pad + 0.9 * gridSize}
-            L {pad + 0.33 * gridSize} {pad +       gridSize}
-            L {pad + 0.18 * gridSize} {pad + 0.9 * gridSize}
-            L {pad + 0    * gridSize} {pad +       gridSize}
-            z'
-        class={visual.frightened ? (visual.flashing ? 'white outlined' : 'blue outlined') : color}
-      />
-    {/if}
-
-    <!-- Left eye -->
-    <ellipse
-      cx='{pad + (0.30 + 0.06*dirX) * gridSize}'
-      cy='{pad + (0.40 + 0.09*dirY) * gridSize}'
-      rx='{0.14 * gridSize}'
-      ry='{0.20 * gridSize}'
-      class={visual.frightened ? 'transparent' : 'white'}
-    />
-
-    <!-- Right eye -->
-    <ellipse
-      cx='{pad + (0.70 + 0.06*dirX) * gridSize}'
-      cy='{pad + (0.40 + 0.09*dirY) * gridSize}'
-      rx='{0.14 * gridSize}'
-      ry='{0.20 * gridSize}'
-      class={visual.frightened ? 'transparent' : 'white'}
-    />
-
-    <!-- Left iris -->
-    <ellipse
-      cx='{pad + (0.30 + 0.12*dirX) * gridSize}'
-      cy='{pad + (0.40 + 0.18*dirY) * gridSize}'
-      rx='{0.07 * gridSize}'
-      ry='{0.10 * gridSize}'
-      class={visual.frightened ? (visual.flashing ? 'red' : 'white') : 'blue'}
-    />
-
-    <!-- Right iris -->
-    <ellipse
-      cx='{pad + (0.70 + 0.12*dirX) * gridSize}'
-      cy='{pad + (0.40 + 0.18*dirY) * gridSize}'
-      rx='{0.07 * gridSize}'
-      ry='{0.10 * gridSize}'
-      class={visual.frightened ? (visual.flashing ? 'red' : 'white') : 'blue'}
-    />
-
-    <!-- Mouth (when frightened) -->
-    {#if visual.frightened}
-      <path
-        d=' M {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
-            L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.38 + 0.38*dirY) : 0.72) * gridSize}
-            L {pad + (0.70 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
-            L {pad + (0.30 + 0.06*dirX) * gridSize} {pad + (dirY ? (0.42 + 0.38*dirY) : 0.76)  * gridSize}
-            z'
-        class={visual.flashing ? 'red' : 'white'}
-      />
-    {/if}
-
-  </svg>
-  {/key}
+{#if nativeState ? nativeState.visible : showGhost || returning}
+{#key returning ? seenReturnEventId : 'server'}
+<div class="ghost" data-ghost-color={color} class:returning style:left="{nativeState ? nativeState.position.x*gridSize/8 : returning?returnFromCol*gridSize+gridSize/2:x}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : returning?returnFromRow*gridSize+gridSize/2:y}px" style:--dx="{(returnTarget[1]-returnFromCol)*gridSize}px" style:--dy="{(returnTarget[0]-returnFromRow)*gridSize}px">
+<Sprite frame={spriteFrame} scale={gridSize/8}/>
+</div>
+{/key}
 {/if}
+<style>
+.ghost{position:absolute;transform:translate(-50%,-50%);line-height:0;pointer-events:none;z-index:3}
+.returning{animation:return-home 650ms linear both}
+@keyframes return-home{from{transform:translate(-50%,-50%)}to{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy)))}}
+@media(prefers-reduced-motion:reduce){.returning{animation-duration:1ms}}
+</style>

@@ -114,3 +114,6 @@
   .death-impact { animation: level-wash 900ms ease-out both; background: transparent; }
   .effect-popup, .effect-banner { animation-name: level-wash; }
 }
+
+/* Arcade presentation keeps the board free of decorative flashes and motion. */
+.arcade .ghost-score {animation:none;text-shadow:none;letter-spacing:0;}

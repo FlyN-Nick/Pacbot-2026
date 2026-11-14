@@ -4,13 +4,21 @@
   "version": "0.0.0",
   "description": "Compare the web visualizer's timing with the original Pac-Man arcade",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test",
     "record": "node record.mjs",
-    "compare": "node run.mjs"
+    "record:sequences": "node record-sequences.mjs",
+    "validate:sequences": "node validate-sequences.mjs",
+    "compare": "node run.mjs",
+    "capture": "node capture.mjs",
+    "compare:visual": "node visual-compare.mjs",
+    "validate:mutations": "node mutations.mjs"
   },
   "devDependencies": {
-    "playwright": "1.56.1"
+    "playwright": "1.56.1",
+    "pngjs": "^7.0.0"
   }
 }

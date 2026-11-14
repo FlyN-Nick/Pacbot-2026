@@ -11,6 +11,8 @@ export const GUI_TIMINGS = Object.freeze({
   deathAnimationMs: 2640,
   // Number of discrete steps in the death animation (death.frameCount)
   deathFrames: 12,
+  // Native MAME capture phases (first event is an initial hold).
+  deathFrameOffsetsMs: Object.freeze([0,495,610.5,742.5,858,990,1105.5,1237.5,1353,1485,1600.5,1848]),
   // Blank maze between the end of the death animation and READY! (death.endToReady)
   deathEndToReadyMs: 132,
   // READY! after a death, before play resumes (death.readyToResume)

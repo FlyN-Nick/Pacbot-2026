@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { freePort, createCleanup, startProcess, runWithTimeout } from './processes.mjs';
@@ -25,7 +25,7 @@ const BROWSER_OPTIONS = {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Installed Google Chrome first; Playwright's own Chromium if Chrome isn't there.
-async function launchBrowser() {
+export async function launchBrowser() {
   try {
     return await chromium.launch({ ...BROWSER_OPTIONS, channel: 'chrome' });
   } catch {
@@ -34,11 +34,11 @@ async function launchBrowser() {
 }
 
 // The game server reads ../config.json, so give it its own folder and config.
-async function startGameServer(tmp, cleanup) {
-  const wsPort = await freePort();
-  const tcpPort = await freePort();
+export async function startGameServer(tmp, cleanup, gameConfig = {}) {
+  const wsPort = gameConfig.WebSocketPort ?? await freePort();
+  const tcpPort = gameConfig.TcpPort ?? await freePort();
   const config = JSON.parse(fs.readFileSync(path.join(repo, 'config.json'), 'utf8'));
-  fs.writeFileSync(path.join(tmp, 'config.json'), JSON.stringify({ ...config, WebSocketPort: wsPort, TcpPort: tcpPort }));
+  fs.writeFileSync(path.join(tmp, 'config.json'), JSON.stringify({ ...config, ...gameConfig, WebSocketPort: wsPort, TcpPort: tcpPort }));
   const serverDir = path.join(tmp, 'server');
   fs.mkdirSync(serverDir);
   const binary = path.join(serverDir, 'pacbot_server');
@@ -47,7 +47,7 @@ async function startGameServer(tmp, cleanup) {
   return wsPort;
 }
 
-async function startVisualizer(tmp, cleanup) {
+export async function startVisualizer(tmp, cleanup) {
   const webClient = path.join(repo, 'web_client');
   const outDir = path.join(tmp, 'web');
   execFileSync('npx', ['vite', 'build', '--outDir', outDir], { cwd: webClient, stdio: 'ignore' });
@@ -58,7 +58,7 @@ async function startVisualizer(tmp, cleanup) {
 }
 
 // A WebSocket to the game server for sending commands, like the visualizer does.
-async function connectCommands(wsPort, cleanup) {
+export async function connectCommands(wsPort, cleanup) {
   const socket = new WebSocket(`ws://localhost:${wsPort}`);
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve, { once: true });
@@ -68,7 +68,7 @@ async function connectCommands(wsPort, cleanup) {
   return (cmd) => socket.send(cmd);
 }
 
-async function runScenario(scenario, page, send) {
+export async function runScenario(scenario, page, send) {
   const events = () => page.evaluate(() => window.__arcadeTimeline.events());
 
   send('r');
@@ -158,7 +158,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

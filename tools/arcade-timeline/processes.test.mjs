@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import { spawn } from 'node:child_process';
 import { freePort, createCleanup, startProcess, runWithTimeout } from './processes.mjs';
 
 const isRunning = (pid) => {
@@ -68,6 +69,56 @@ test('a second cleanup run waits for the one in progress', async () => {
   assert.equal(finished, true);
   await first;
 });
+
+test('completed producers remove their signal listeners', async () => {
+  const before = ['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal));
+  for (let i = 0; i < 12; i++) {
+    const cleanup = createCleanup();
+    cleanup.installSignalHandlers();
+    await cleanup.run();
+  }
+  assert.deepEqual(['SIGINT', 'SIGTERM'].map(signal => process.listenerCount(signal)), before);
+});
+
+for (const repeated of [false, true]) {
+  test(`SIGINT awaits active producer teardown after a completed producer (repeated=${repeated})`, async () => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `
+      import { createCleanup } from ${JSON.stringify(new URL('./processes.mjs', import.meta.url).href)};
+      const completed = createCleanup();
+      completed.installSignalHandlers();
+      await completed.run();
+      const active = createCleanup();
+      active.installSignalHandlers();
+      active.add(async () => {
+        console.log('cleanup started');
+        await new Promise(resolve => setTimeout(resolve, 150));
+        console.log('cleanup finished');
+      });
+      console.log('ready');
+      setInterval(() => {}, 1000);
+    `], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '', errors = '', sent = false, resent = false;
+    const watchdog = setTimeout(() => child.kill('SIGKILL'), 5000);
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      if (!sent && output.includes('ready')) {
+        sent = true;
+        child.kill('SIGINT');
+      }
+      if (repeated && !resent && output.includes('cleanup started')) {
+        resent = true;
+        child.kill('SIGINT');
+        child.kill('SIGTERM');
+      }
+    });
+    child.stderr.on('data', chunk => errors += chunk);
+    const [code, signal] = await new Promise(resolve => child.on('close', (...args) => resolve(args)));
+    clearTimeout(watchdog);
+    assert.equal(code, 130, `${signal}: ${errors}`);
+    assert.equal(output.match(/cleanup finished/g)?.length, 1, output);
+    if (repeated) assert.equal(resent, true);
+  });
+}
 
 test('runWithTimeout returns the result without waiting for the timeout', async () => {
   const started = Date.now();

@@ -20,21 +20,13 @@
     border: 0;
   }
 
-  .maze-space {
-
-    /* Positioning */
-    position: absolute;
-    transform: translate(50%, 50%);
-    bottom: calc(50% + 26px);
-    right: 50%;
-    width: calc(28 * var(--grid-size));
-    height: calc(31 * var(--grid-size));
-  }
-
-  .audio-toolbar {
-    display: contents;
-  }
-
+  .screen {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
+  .screen.arcade {height:calc(36*var(--grid-size));background:black;}
+  .maze-space {position:absolute;left:0;top:0;width:calc(28*var(--grid-size));height:calc(31*var(--grid-size));isolation:isolate;}
+  .arcade .maze-space {top:calc(3*var(--grid-size));}
+  .arcade :global(.grid-element){box-shadow:none;}
+  .non-interactive :global(.grid-element){pointer-events:none;}
+  .arcade :global(.pellet){background-color:#ffb8ae;}
   :global(.path) {
       border: 1px solid cyan !important;
   }
@@ -43,19 +35,36 @@
 
 <script>
   import { onDestroy } from 'svelte';
-  import AudioControls from './lib/AudioControls.svelte';
+  import ArcadeHud from './lib/ArcadeHud.svelte';
+  import {createPauseTrace} from './lib/pauseTrace.js';
+  const pauseTrace=createPauseTrace();
+  window.__arcadePauseTrace={events:()=>pauseTrace.events(),status:()=>({mode:gameMode,tick:currTicks,lives:currLives,level:currLevel,sequence:currentKind(),runnerActive:runner.running})};
+  import CaptureActors from './lib/CaptureActors.svelte';
+  import {createVisualCapture} from './lib/visualCapture.js';
+  import {hudLayoutForMode} from './lib/arcadeHud.js';
+  let visualFixture=null;
+  let animationPhase=0;
+  let highScore=0;
+  import { createHighScore } from './lib/highScore.js';
+  const highScoreStore=createHighScore({target:window,onChange:score=>highScore=score});
+  let lastAnimationTime=performance.now();
+  const animationTimer=setInterval(()=>{const now=performance.now();if(!displayFrozen&&(!readyVisible||pacmanMoving)&&!allActorsHidden&&pacmanActive)animationPhase+=now-lastAnimationTime;lastAnimationTime=now;},16);
+  createVisualCapture(window.location.search,window,fixture=>visualFixture=fixture);
+  $: arcadeLayout=hudLayoutForMode($visualizerMode)==='arcade';
+  $: highScoreStore.record(currScore);
+  onDestroy(()=>{highScoreStore.destroy();clearInterval(animationTimer);delete window.__arcadeVisual;delete window.__arcadePauseTrace;});
+  import HudControls from './lib/HudControls.svelte';
   import GameEffects from './lib/environment/GameEffects.svelte';
   import { createGameEventTracker } from './lib/gameEvents.js';
   import { createAudioController } from './lib/audioController.js';
   import { GUI_TIMINGS } from './lib/guiTimings.js';
-  import { parseTimelineParams, createTimeline, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
+  import { parseTimelineParams, createTimeline, createLiveObservation, deathFrameOffsetsMs, createFrameTimelineTracker } from './lib/timeline.js';
   import { getEventActions, getFrameActivity, isGameReset, enrichGhostEvents, hasPacmanMoved } from './lib/eventActions.js';
-  import ModeToggle from './lib/ModeToggle.svelte';
   import { WALLS, MAZE_ROWS as ROWS, MAZE_COLS as COLS } from './lib/maze.js';
   // A cleared board, shown while the level-complete sequence is frozen
   const emptyPelletGrid = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   import { visualizerMode, resolveMode, searchWithMode } from './lib/visualizerMode.js';
-  import { planSequence, createSequenceRunner, resumedElsewhere } from './lib/arcadeSequencer.js';
+  import { planSequence, createSequenceRunner, resumedElsewhere, createModeChangeRelease } from './lib/arcadeSequencer.js';
   import { createSiren, sirenStepFor, sirenShouldPlay, SIREN_STEPS } from './lib/siren.js';
   import { createEyesSound } from './lib/eyesSound.js';
   import { soundForState } from './lib/ghostEyes.js';
@@ -72,8 +81,13 @@
   const timelineParams = parseTimelineParams(window.location.search);
   const timeline = createTimeline({ enabled: timelineParams.enabled });
   const frameTimelineTracker = createFrameTimelineTracker();
+  const liveObservation = createLiveObservation({enabled: timelineParams.enabled && new URLSearchParams(window.location.search).get('observe') === '1'});
   // Record when the start music really starts and stops (it can be cut short)
-  const recordMusicStart = ({ name }) => { if (name === 'intro') timeline.record('musicStarted'); };
+  const recordMusicStart = ({ name, duration }) => {
+    liveObservation.record('audio-start', {name, duration});
+    if (name === 'intro') timeline.record('musicStarted');
+    if (name === 'death') timeline.record('deathSoundStarted', { duration });
+  };
   const recordMusicEnd = ({ name }) => { if (name === 'intro') timeline.record('musicEnded'); };
 
   const audioController = createAudioController({
@@ -84,9 +98,11 @@
   const fruitTypeForLevel = (level) => ['cherry', 'strawberry', 'orange', 'orange', 'apple', 'apple', 'melon', 'melon', 'galaxian', 'galaxian', 'bell', 'bell', 'key'][Math.min(Math.max(level, 1) - 1, 12)];
   let audioEnabled = false;
   let latestFrame = null;
+  let pendingBotRestart = false;
   let visualEvents = [];
   let effectsRevision = 0;
   let deathEventId = null;
+  let deathPosition = null;
   let ghostReturnEvents = [];
   let pacmanActive = false;
   let pacmanMoving = false;
@@ -96,6 +112,7 @@
   let displayFrozen = false;
   let frozenFrame = null;
   let catchFrame = null;
+  let terminalGhostFrame = null;
   let ghostsHidden = false;
   let startRequested = false;
   let sessionStarted = false;
@@ -117,6 +134,8 @@
   let eyesFlightUntil = 0; // competition mode: the quick flight home
   let eyesFlightTimer;
   let runningKind = null;
+  let pendingSequenceResume = false;
+  const modeChangeRelease = createModeChangeRelease();
   let pageHidden = document.hidden;
   function onVisibilityChange() {
     pageHidden = document.hidden;
@@ -137,10 +156,13 @@
   let pickedFruits = {};
 
   function clearGameEffects() {
+    modeChangeRelease.cancel();
     eventTracker.reset();
     latestFrame = null;
+    terminalGhostFrame = null;
     visualEvents = [];
     deathEventId = null;
+    deathPosition = null;
     runner.cancel();
     clearSequenceDisplay();
     startRequested = false;
@@ -237,8 +259,11 @@
   function runSequence(kind, { lastLife = false, serverPauses = false, ghosts = [] } = {}) {
     // A replaced level sequence must not leave its display behind
     if (currentKind() === 'levelComplete') clearLevelDisplay();
+    pauseTrace.record('sequenceStarted',{kind,mode:$visualizerMode,lastLife,serverPauses});
     runningKind = kind;
-    runner.run(planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts }));
+    const plan=planSequence({ kind, mode: $visualizerMode, timings: GUI_TIMINGS, lastLife, serverPauses, ghosts });
+    pendingSequenceResume=$visualizerMode==='arcade'&&plan.some(step=>step.action==='resume');
+    runner.run(plan);
   }
 
   const currentKind = () => (runner.running ? runningKind : null);
@@ -295,12 +320,14 @@
 
   // Carry out one step of an arcade sequence (lib/arcadeSequencer.js)
   function executeStep(step) {
+    liveObservation.record('sequence-step', {step, kind: currentKind()});
     switch (step.action) {
       case 'hold':
-        sendToSocket('p');
+        sendToSocket('p',`sequence:${runningKind}`);
         break;
       case 'resume':
-        sendToSocket('P');
+        pendingSequenceResume=false;
+        sendToSocket('P',`sequence:${runningKind}`);
         timeline.record('gameStarted');
         break;
       case 'showReady':
@@ -323,10 +350,16 @@
         levelFrozen = false;
         break;
       case 'deathStart':
+        deathPosition = catchFrame?.pacman ? { ...catchFrame.pacman } : null;
         deathEventId = ++deathCount;
         dying = true;
         clearTimeout(dyingTimer);
-        dyingTimer = setTimeout(() => { dying = false; }, GUI_TIMINGS.deathAnimationMs);
+        dyingTimer = setTimeout(() => {
+          dying = false;
+          // Later ghost-eaten/level-clear remounts must not replay this death.
+          deathEventId = null;
+          deathPosition = null;
+        }, GUI_TIMINGS.deathAnimationMs);
         if ($visualizerMode === 'arcade') ghostsHidden = true;
         audioController.play('death');
         recordDeathFrames();
@@ -382,18 +415,25 @@
   }
 
   // A pause or resume from a person or the bot client; it always wins over a sequence
-  function sendControl(control) {
+  function sendControl(control,source='manual') {
+    pauseTrace.record('controlRequested',{control,source,sequence:currentKind()});
+    modeChangeRelease.cancel();
+    if(source==='manual'||control==='p')pendingBotRestart=false;
     if (control === 'P' && canRequestStart()) {
       startRequested = true;
       runSequence('start');
       return;
     }
+    pauseTrace.record('sequenceCancelled',{reason:source,kind:currentKind()});
     runner.cancel();
     clearSequenceDisplay();
-    sendToSocket(control);
+    sendToSocket(control,source);
   }
 
   function changeMode(mode) {
+    pauseTrace.record('modeChanged',{from:$visualizerMode,to:mode,sequence:currentKind()});
+    modeChangeRelease.capture({mode:$visualizerMode,running:runner.running,pendingResume:pendingSequenceResume,socketOpen});
+    pendingSequenceResume=false;
     // Show the mode in the address bar without adding a history entry
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, '', pathname + searchWithMode(search, mode) + hash);
@@ -403,8 +443,13 @@
     runner.cancel();
     clearSequenceDisplay();
     if (deathPending) executeStep({ action: 'deathStart' });
+    releaseModeChangePause(gameMode);
     // A start sequence cut short leaves the next start free to show READY
     if (!sessionStarted) startRequested = false;
+  }
+
+  function releaseModeChangePause(mode) {
+    if(modeChangeRelease.consume({paused:mode===Modes.Paused,socketOpen}))sendToSocket('P','mode change');
   }
 
   const popcount = (n) => { let count = 0; for (let v = n >>> 0; v; v &= v - 1) count++; return count; };
@@ -419,6 +464,8 @@
   }
 
   function routeFrame(frame) {
+    liveObservation.record('server-frame', {frame});
+    if(!latestFrame||frame.mode!==latestFrame.mode||frame.lives!==latestFrame.lives||frame.level!==latestFrame.level)pauseTrace.record('serverState',{mode:frame.mode,tick:frame.tick,lives:frame.lives,level:frame.level,score:frame.score,ghostCombo:frame.ghostCombo,pacman:frame.pacman,sequence:currentKind()});
     if (isGameReset(latestFrame, frame)) clearGameEffects();
     // Another client resumed play during the level sequence: show the live board
     if (resumedElsewhere({
@@ -448,6 +495,9 @@
       ghosts: frame.ghosts.map(position),
       fruit: position(frame.fruit),
     }), frame, latestFrame);
+    // Terminal cleanup precedes deathStart: even a cached audio buffer loads
+    // asynchronously, so stopping afterward would cancel the final death cue.
+    if (events.some(event => event.type === 'gameOver')) audioController.stopAll();
     for (const event of events) {
       if (event.type === 'fruitEaten') {
         const type = fruitTypeForLevel(frame.level);
@@ -460,14 +510,15 @@
         if (!startRequested) runSequence($visualizerMode === 'arcade' ? 'startDetected' : 'start');
       }
       if (event.type === 'lifeLost') {
+        liveObservation.record('collision', {previous:latestFrame,received:frame,uncertainty:'Last received pre-loss position; wire protocol does not expose the exact collision position.'});
         timeline.anchor('pacmanCaught');
         clearGhostEaten();
         catchFrame = latestFrame;
+        if (frame.lives === 0) terminalGhostFrame = latestFrame;
         // A real death removes Pac-Man from the board and the server pauses itself
         const pacmanRemoved = ((frame.pacman.rowState | frame.pacman.colState) & 0x20) !== 0;
         runSequence('death', { lastLife: frame.lives === 0, serverPauses: pacmanRemoved });
       }
-      if (event.type === 'gameOver') audioController.stopAll();
       if (event.type === 'levelChanged') {
         timeline.anchor('levelCleared');
         clearGhostEaten();
@@ -477,6 +528,7 @@
     }
     const eaten = events.filter(({ type }) => type === 'ghostEaten');
     if (eaten.length) {
+      pauseTrace.record('ghostEaten',{ghosts:eaten.map(e=>({index:e.ghostIndex,row:e.row,col:e.col,points:e.points})),tick:frame.tick,combo:frame.ghostCombo,previousCombo:latestFrame?.ghostCombo,score:frame.score,previousScore:latestFrame?.score,previousPacman:latestFrame?.pacman,ghostStates:frame.ghosts,previousGhostStates:latestFrame?.ghosts});
       timeline.anchor('ghostEaten');
       const newlyEaten = eaten.map(({ ghostIndex, row, col, points }) => ({ ghostIndex, row, col, points }));
       // A ghost eaten during a running freeze joins it, so no ghost is left hidden
@@ -500,7 +552,17 @@
       timeline.record(type, data);
     }
     ghostReturnEvents = ghostReturnEvents;
+    // A terminal packet can clear directions while leaving ghosts on their final
+    // tiles. Keep their last drawn phase, but never mask a real move or visibility
+    // change (including the server's hidden/death and respawn packets).
+    if (terminalGhostFrame && (frame.lives > 0 || frame.level !== terminalGhostFrame.level ||
+      frame.ghosts.some((ghost, index) => {
+        const previous = terminalGhostFrame.ghosts[index];
+        return !previous || (ghost.rowState & 0x3f) !== (previous.rowState & 0x3f) ||
+          (ghost.colState & 0x3f) !== (previous.colState & 0x3f);
+      }))) terminalGhostFrame = null;
     latestFrame = frame;
+    releaseModeChangePause(frame.mode);
     const actions = getEventActions(events);
     visualEvents = actions.visualEvents;
     for (const { name, event } of actions.audioCues) {
@@ -509,6 +571,14 @@
     }
     updateSirenStep(frame, activity);
     updateBackgroundSound();
+    // A simulation reset is a restart request. Wait for acknowledgement rather
+    // than relying on a second, timing-dependent bot resume message.
+    if(pendingBotRestart && frame.tick===0 && frame.mode===Modes.Paused && frame.lives>0){
+      pendingBotRestart=false;
+      sessionStarted=false;
+      pauseTrace.record('botRestartAcknowledged');
+      sendControl('P','bot reset');
+    }
   }
 
   // The death animation starts as the lifeLost event is routed
@@ -524,6 +594,8 @@
   if (timelineParams.enabled) {
     window.__arcadeTimeline = {
       events: () => timeline.events(),
+      elapsed: () => timeline.elapsed(),
+      state: () => structuredClone(latestFrame),
       reset: () => timeline.reset(),
       frame: () => latestFrame && {
         pacman: { row: latestFrame.pacman.rowState & 0x1f, col: latestFrame.pacman.colState & 0x1f },
@@ -531,6 +603,39 @@
         pellets: [...latestFrame.pelletRows],
       },
     };
+  }
+
+  // Observe the selected DOM artwork after the renderer has had a paint
+  // opportunity. This reads output only. Screenshots bracket these reads; rAF
+  // counters do not claim exact compositor identities.
+  if (timelineParams.enabled && new URLSearchParams(window.location.search).get('observe') === '1') {
+    let stopped=false,raf=0,handle,timer;
+    const geometry=element=>{
+      if(!element)return null;
+      const b=element.getBoundingClientRect();
+      return {left:b.left,top:b.top,width:b.width,height:b.height};
+    };
+    const read=()=>{
+      const actor=document.querySelector('.pacman-position');
+      const sprite=actor?.querySelector('.sprite');
+      const screen=document.querySelector('[data-arcade-screen]');
+      liveObservation.observe({raf,server:latestFrame,presentation:{kind:currentKind(),dying,frozen:displayFrozen},render:{
+        frame:sprite?.dataset.frame??null,
+        x:actor?parseFloat(actor.style.left)/gridSize*8:null,
+        y:actor?parseFloat(actor.style.top)/gridSize*8:null,
+        ready:Boolean(document.querySelector('.ready-banner')),
+        gameOver:Boolean(document.querySelector('.game-over-banner')),
+        scores:[...document.querySelectorAll('.ghost-score')].map(el=>el.textContent),
+        maze:document.querySelector('.maze')?.classList.contains('blank')?'blank':document.querySelector('.maze')?.classList.contains('flashing')?'white':'blue',
+        geometry:geometry(actor),screen:geometry(screen),
+        artwork:sprite?{backgroundImage:getComputedStyle(sprite).backgroundImage,backgroundPosition:getComputedStyle(sprite).backgroundPosition}:null,
+        ghosts:[...document.querySelectorAll('.ghost')].map(el=>({geometry:geometry(el),frame:el.querySelector('.sprite')?.dataset.frame,identity:el.dataset.ghostColor,x:(el.getBoundingClientRect().left+el.getBoundingClientRect().width/2-document.querySelector('.maze-space').getBoundingClientRect().left)/gridSize*8,y:(el.getBoundingClientRect().top+el.getBoundingClientRect().height/2-document.querySelector('.maze-space').getBoundingClientRect().top)/gridSize*8})),
+      }});
+    };
+    const loop=()=>{if(stopped)return;raf++;timer=setTimeout(()=>{if(!stopped)read();},0);handle=requestAnimationFrame(loop);};
+    handle=requestAnimationFrame(loop);
+    window.__arcadeLive={snapshot:()=>liveObservation.snapshot(),latest:()=>liveObservation.latest(),mark:(name,detail={})=>liveObservation.record('driver',{name,...detail})};
+    onDestroy(()=>{stopped=true;cancelAnimationFrame(handle);clearTimeout(timer);delete window.__arcadeLive;});
   }
 
   /* Config */
@@ -546,12 +651,6 @@
   import Pellets from './lib/environment/Pellets.svelte';
 
   /* Info Boxes */
-  import Lives from './lib/info_boxes/Lives.svelte';
-  import FruitInventory from './lib/info_boxes/FruitInventory.svelte';
-  import Mps from './lib/info_boxes/Mps.svelte';
-  import Score from './lib/info_boxes/Score.svelte';
-  import Ticker from './lib/info_boxes/Ticker.svelte';
-  import Reset from './lib/info_boxes/reset.svelte';
 
   // Creating a websocket client
   var socket = new WebSocket(`ws://${config.ServerIP}:${timelineParams.wsPort ?? config.WebSocketPort}`);
@@ -854,7 +953,7 @@
           pelletGrid = pelletGrid;
         }
         routeFrame({
-          tick: currTicks, mode: gameMode, lives: currLives,
+          tick: currTicks, updatePeriod, mode: gameMode, lives: currLives,
           score: currScore, level: currLevel, ghostCombo,
           pacman: { rowState: pacmanRowState, colState: pacmanColState },
           ghosts: [
@@ -929,17 +1028,22 @@
           break;
         }
         case 'reset_game': {
+          pauseTrace.record('botControl',{command:'reset_game',sequence:currentKind()});
           toggleReset();
+          pendingBotRestart=true;
           console.log('Bot client requested game reset');
           break;
         }
         case 'pause_game': {
-          sendControl('p');
+          sendControl('p','bot');
           console.log('Bot client requested game pause');
           break;
         }
         case 'resume_game': {
-          sendControl('P');
+          // Simulation auto-resumes after a life/level change. Let the arcade
+          // sequencer finish its animation, sound and READY hold first.
+          if ($visualizerMode === 'arcade' && runner.running) {pauseTrace.record('botResumeDeferred',{sequence:currentKind()});break;}
+          sendControl('P','bot');
           console.log('Bot client requested game resume');
           break;
         }
@@ -970,14 +1074,18 @@
   let innerHeight = 0;
   // On mobile, overflowing content can expand innerWidth beyond the viewport.
   $: gridSize = Math.max(0, Math.min(
-    (Math.min(innerHeight, document.documentElement.clientHeight) - 64) / MAZE_ROWS,
+    (Math.min(innerHeight, document.documentElement.clientHeight) - 16) / (arcadeLayout ? 36 : MAZE_ROWS),
     Math.min(innerWidth, document.documentElement.clientWidth) / MAZE_COLS,
   ))
 
 
   // While a death is frozen, show everyone where Pac-Man was caught
   $: frozenPacman = displayFrozen ? frozenFrame?.pacman : null;
-  $: frozenGhosts = displayFrozen ? frozenFrame?.ghosts : null;
+  // Coordinates and interpolation timing belong to the same source packet.
+  $: ghostFrame = displayFrozen ? frozenFrame : terminalGhostFrame;
+  $: frozenGhosts = ghostFrame?.ghosts;
+  $: ghostUpdatePeriod = ghostFrame?.updatePeriod ?? updatePeriod;
+  $: ghostModTicks = (ghostFrame?.tick ?? currTicks) % ghostUpdatePeriod;
 
   // Calculate the remainder when currTicks is divided by updatePeriod
   $: modTicks = currTicks % updatePeriod
@@ -1119,8 +1227,10 @@
   }
 
   // Send message to websocket server (with error handling for closed sockets)
-  const sendToSocket = (message) => {
+  const sendToSocket = (message,source='visualizer') => {
     if (socketOpen) {
+      if(['p','P','r','R'].includes(message))pauseTrace.record('commandSent',{command:message,source,sequence:currentKind()});
+      liveObservation.record('command', {command:message,source,sequence:currentKind()});
       socket.send(message);
     }
   }
@@ -1132,6 +1242,8 @@
   }
 
   const toggleReset = () => {
+    modeChangeRelease.cancel();
+    pendingBotRestart=false;
     // A reset always wins over a running arcade sequence
     runner.cancel();
     clearSequenceDisplay();
@@ -1147,7 +1259,9 @@
 
   // Handle key presses, to send responses back to the server
   const handleKeyDown = (event) => {
-    if (event.target?.closest?.('button, input, select, textarea, a, [contenteditable], [role="button"], [role="slider"]')) return;
+    // Maze cells are the game surface; keep shortcuts after selecting a cell.
+    // HUD/form controls retain their native keyboard activation and editing.
+    if (event.target?.closest?.('button:not(.grid-element), input, select, textarea, a, [contenteditable], [role="button"], [role="slider"]')) return;
 
     // Retrieve the key information
     const key = event.code === 'Space' ? ' ' : event.key;
@@ -1198,7 +1312,18 @@
     }
   }
 
+  // Reload/HMR must not orphan a pause whose resume timer belongs to this page.
+  // A manual pause has no running plan; competition and last-life plans never resume.
+  function releaseAbandonedPause(){
+    if($visualizerMode==='arcade'&&runner.running&&pendingSequenceResume&&gameMode===Modes.Paused&&socket.readyState===WebSocket.OPEN){
+      pendingSequenceResume=false;
+      sendToSocket('P','page cleanup');
+    }
+  }
+  window.addEventListener('pagehide',releaseAbandonedPause);
   onDestroy(() => {
+    releaseAbandonedPause();
+    window.removeEventListener('pagehide',releaseAbandonedPause);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     runner.cancel();
     clearTimeout(dyingTimer);
@@ -1218,7 +1343,9 @@
   bind:innerHeight
 />
 
-<div class='maze-space' style:--grid-size="{gridSize}px">
+<div data-arcade-screen class="screen" class:arcade={arcadeLayout} class:non-interactive={$visualizerMode==='arcade'} style:--grid-size="{gridSize}px">
+{#if arcadeLayout}<ArcadeHud {gridSize} playerLabelVisible={visualFixture?.state.playerLabelVisible??true} score={visualFixture?.state.score??currScore} lives={visualFixture?.state.lives??currLives} level={visualFixture?.state.level??currLevel} highScore={visualFixture?.state.highScore??highScore}/>{/if}
+<div class="maze-space">
 
   <Maze
     {gridSize}
@@ -1227,13 +1354,15 @@
   />
 
   <Pellets
-    pelletGrid={levelFrozen ? emptyPelletGrid : pelletGrid}
+    animate={visualFixture?.kind!=='arcade'}
+    pelletGrid={visualFixture?.state.pellets??(levelFrozen ? emptyPelletGrid : pelletGrid)}
     {gridSize}
     {botSocket}
     {intersectionGrid}
     {showIntersections}
   />
 
+  {#if visualFixture}<CaptureActors fixture={visualFixture} {gridSize}/>{:else}
   <Fruit
     {gridSize}
     {fruitRowState}
@@ -1252,6 +1381,8 @@
     active={pacmanActive}
     moving={pacmanMoving}
     {deathEventId}
+    {deathPosition}
+    phase={animationPhase}
     ready={readyVisible}
   />
   {/if}
@@ -1260,8 +1391,9 @@
   {#if numActiveGhosts >= 1 && !hiddenGhosts.has(0)}
     <Ghost
       {gridSize}
-      {modTicks}
-      {updatePeriod}
+      modTicks={ghostModTicks}
+      phase={animationPhase}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[0]?.rowState ?? redRowState}
       colState={frozenGhosts?.[0]?.colState ?? redColState}
       frightState={frozenGhosts?.[0]?.frightState ?? redFrightState}
@@ -1274,8 +1406,9 @@
   {#if numActiveGhosts >= 2 && !hiddenGhosts.has(1)}
     <Ghost
       {gridSize}
-      {modTicks}
-      {updatePeriod}
+      modTicks={ghostModTicks}
+      phase={animationPhase}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[1]?.rowState ?? pinkRowState}
       colState={frozenGhosts?.[1]?.colState ?? pinkColState}
       frightState={frozenGhosts?.[1]?.frightState ?? pinkFrightState}
@@ -1288,8 +1421,9 @@
   {#if numActiveGhosts >= 3 && !hiddenGhosts.has(2)}
     <Ghost
       {gridSize}
-      {modTicks}
-      {updatePeriod}
+      modTicks={ghostModTicks}
+      phase={animationPhase}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[2]?.rowState ?? cyanRowState}
       colState={frozenGhosts?.[2]?.colState ?? cyanColState}
       frightState={frozenGhosts?.[2]?.frightState ?? cyanFrightState}
@@ -1302,8 +1436,9 @@
   {#if numActiveGhosts >= 4 && !hiddenGhosts.has(3)}
     <Ghost
       {gridSize}
-      {modTicks}
-      {updatePeriod}
+      modTicks={ghostModTicks}
+      phase={animationPhase}
+      updatePeriod={ghostUpdatePeriod}
       rowState={frozenGhosts?.[3]?.rowState ?? orangeRowState}
       colState={frozenGhosts?.[3]?.colState ?? orangeColState}
       frightState={frozenGhosts?.[3]?.frightState ?? orangeFrightState}
@@ -1319,50 +1454,14 @@
   {/each}
   {/key}
 
-  <FruitInventory {gridSize} fruits={pickedFruits} />
+  {/if}
+  <HudControls {gridSize} paused={gameMode === Modes.Paused} {audioEnabled} mode={$visualizerMode} on:pause={togglePause} on:reset={toggleReset} on:audio={toggleAudio} on:mode={(event) => changeMode(event.detail)} />
 
-  <Mps {gridSize} {mpsAvg} />
-
-  <Ticker
-    {gridSize}
-    {modTicks}
-    {updatePeriod}
-    {gameMode}
-    {modeSteps}
-    {modeDuration}
-    {Modes}
-    {togglePause}
-  />
-
-  <Reset
-    {gridSize}
-    {toggleReset}
-  />
-
-  <Score
-    {gridSize}
-    {currLevel}
-    {currScore}
-  />
-
-  <Lives
-    {gridSize}
-    {currLives}
-    {Directions}
-  />
-
+  {#if !visualFixture}
   {#key effectsRevision}
-    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} />
+    <GameEffects events={visualEvents} {gridSize} ready={readyVisible} scores={scoresVisible} arcade={arcadeLayout} />
   {/key}
 
-  <div class="audio-toolbar">
-    <AudioControls
-      enabled={audioEnabled}
-      on:toggle={toggleAudio}
-    />
-    <ModeToggle
-      mode={$visualizerMode}
-      on:change={(event) => changeMode(event.detail)}
-    />
-  </div>
+  {/if}
+</div>
 </div>
