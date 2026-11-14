@@ -10,13 +10,16 @@ const repo = path.resolve(import.meta.dirname, '../..');
 const json = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const failureCodes = { 'waiting-closed':'open-waiting-pose', 'captured-death-position':'death-position-moved', 'bot-death-art':'death-art-cancelled', 'colored-map-alpha':'opaque-background-pixel', 'no-neighbor-sampling':'neighbor-boundary-pixels' };
+const failureCodes = { 'waiting-closed':'open-waiting-pose', 'captured-death-position':'death-position-moved', 'bot-death-art':'death-art-cancelled', 'colored-map-alpha':'opaque-background-pixel', 'no-neighbor-sampling':'neighbor-boundary-pixels', 'structural-atlas-padding':'structural-atlas-padding-violation' };
+const categoryFor = target => target === 'structural-atlas-padding' ? 'STRUCTURAL/ARTWORK' : ['colored-map-alpha', 'no-neighbor-sampling'].includes(target) ? 'VISUAL/ARTWORK' : 'BEHAVIOR';
 export function evaluateProof(target, baseline, mutated) {
+  const category = categoryFor(target);
   let reason = 'Healthy targeted baseline passed; mutation failed the same assertion.';
   if (baseline?.target !== target || baseline?.status !== 'pass' || baseline?.errors?.length) reason = 'Baseline did not pass the healthy targeted assertion.';
   else if (mutated?.target !== target || mutated?.status !== 'fail' || mutated?.errors?.length || !failureCodes[target] || mutated?.failureCode !== failureCodes[target]) reason = 'Mutation did not fail the healthy targeted assertion; unrelated errors and missing observations are not detection.';
-  else return { target, status: 'pass', reason };
-  return { target, status: 'fail', reason };
+  else if (target === 'structural-atlas-padding' && (baseline.category !== category || mutated.category !== category)) reason = 'Structural evidence must be explicitly categorized STRUCTURAL/ARTWORK.';
+  else return { target, category, status: 'pass', reason };
+  return { target, category, status: 'fail', reason };
 }
 export const mutations = [
   { name: 'open-idle', target: 'waiting-closed', file: 'web_client/src/lib/sprites/frames.js',
@@ -27,7 +30,7 @@ export const mutations = [
     from: "if ($visualizerMode === 'arcade' && runner.running) {pauseTrace.record('botResumeDeferred',{sequence:currentKind()});break;}",
     to: "if ($visualizerMode === 'arcade' && runner.running) { runner.cancel(); clearSequenceDisplay(); }" },
   { name: 'opaque-black-backgrounds', target: 'colored-map-alpha', file: 'web_client/public/sprites/atlas.png' },
-  { name: 'remove-atlas-gutters', target: 'no-neighbor-sampling', file: 'web_client/src/lib/sprites/catalog.js' },
+  { name: 'remove-atlas-gutters', target: 'structural-atlas-padding', file: 'web_client/src/lib/sprites/catalog.js' },
 ];
 export function applyMutation(root, mutation) {
   const file = path.join(root, mutation.file), before = fs.readFileSync(file);
@@ -44,11 +47,12 @@ export function applyMutation(root, mutation) {
   }
   return { file: mutation.file, before: sha(before), after: sha(fs.readFileSync(file)), replacement: mutation.to ?? mutation.name };
 }
+const runnerFiles = root => ['tools/arcade-timeline/mutations.mjs', 'tools/arcade-timeline/atlas-padding.mjs'].filter(file => fs.existsSync(path.join(root, file)));
 function trackedFiles(root) { return execFileSync('git', ['ls-files', '-z'], { cwd: root }).toString().split('\0').filter(file => file && fs.statSync(path.join(root,file)).isFile()); }
 export function copyImplementation(root, destination) {
   // Only tracked implementation files; never recurse through an archive, ROM,
   // node_modules, .git, local evidence, build output, or other ignored artifacts.
-  const files = [...new Set([...trackedFiles(root), 'tools/arcade-timeline/mutations.mjs'])].filter(file =>
+  const files = [...new Set([...trackedFiles(root), ...runnerFiles(root)])].filter(file =>
     /^(web_client\/|server\/|tools\/arcade-timeline\/|config\.json$)/.test(file) && !/(^|\/)(node_modules|dist|\.git)(\/|$)|\.(zip|rom)$/i.test(file));
   for (const file of files) { const dest = path.join(destination, file); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(path.join(root, file), dest); }
   for (const dir of ['web_client', 'tools/arcade-timeline']) fs.symlinkSync(path.join(root, dir, 'node_modules'), path.join(destination, dir, 'node_modules'), 'dir');
@@ -75,17 +79,19 @@ async function childProbe(copy, target, out) {
     return { ...evidence, process: result, evidence: path.join(out, 'assertion.json') };
   } finally { fs.closeSync(log); }
 }
-export async function runMutations({ out, root = repo, reference = path.join(repo, '.superpowers/sdd/2026-11-10-sequence-validation/task-6-evidence/reference-final') }) {
+export async function runMutations({ out, root = repo, only, reference = path.join(repo, '.superpowers/sdd/2026-11-10-sequence-validation/task-6-evidence/reference-final') }) {
+  const selected = only ? mutations.filter(mutation => mutation.name === only) : mutations;
+  if (!selected.length) throw Error(`Unknown mutation: ${only}`);
   out = path.resolve(out); root = path.resolve(root); reference = path.resolve(reference);
   if (out === root || root.startsWith(out + path.sep) || out === reference || reference.startsWith(out + path.sep) || out.startsWith(reference + path.sep)) throw Error('Mutation output must be separate from source and reference inputs');
   fs.mkdirSync(out, { recursive: true });
   if (fs.readdirSync(out).length) throw Error('Mutation output must be empty');
-  const sourceFiles = [...new Set([...trackedFiles(root), 'tools/arcade-timeline/mutations.mjs'])];
+  const sourceFiles = [...new Set([...trackedFiles(root), ...runnerFiles(root)])];
   const before = { source: hashes(root, sourceFiles), reference: hashes(reference, referenceFiles(reference)) };
   json(path.join(out, 'hashes-before.json'), before);
   const results = [], copies = path.join(out, 'copies'); fs.mkdirSync(copies);
   try {
-    for (const mutation of mutations) {
+    for (const mutation of selected) {
       const copy = path.join(copies, mutation.name), evidence = path.join(out, mutation.name);
       const files = copyImplementation(root, copy); fs.mkdirSync(evidence);
       json(path.join(evidence, 'copy-inventory.json'), files);
@@ -103,7 +109,7 @@ export async function runMutations({ out, root = repo, reference = path.join(rep
     const after = { source: hashes(root, sourceFiles), reference: hashes(reference, referenceFiles(reference)) };
     json(path.join(out, 'hashes-after.json'), after);
     const unchanged = JSON.stringify(before) === JSON.stringify(after);
-    json(path.join(out, 'summary.json'), { passed: unchanged && results.length === mutations.length && results.every(r => r.status === 'pass'), unchanged, results, reference, exclusions: ['git metadata', 'ROMs', 'ignored local artifacts'], dependencyPolicy: 'Existing node_modules linked read only; no install or extraction; disposable copies removed' });
+    json(path.join(out, 'summary.json'), { passed: unchanged && results.length === selected.length && results.every(r => r.status === 'pass'), unchanged, selected: selected.map(m => m.name), results, reference, exclusions: ['git metadata', 'ROMs', 'ignored local artifacts'], dependencyPolicy: 'Existing node_modules linked read only; no install or extraction; disposable copies removed' });
     if (!unchanged) throw Error('Source or reference hashes changed during mutation run');
   }
   return read(path.join(out, 'summary.json'));
@@ -135,6 +141,13 @@ export function evaluateBotDeathProbe(trace) {
 }
 
 async function probe(target, out) {
+  if (target === 'structural-atlas-padding') {
+    const { checkAtlasPadding } = await import('./atlas-padding.mjs');
+    const { catalog } = await import('../../web_client/src/lib/sprites/catalog.js');
+    const images = new Map([...new Set(Object.values(catalog).map(frame => frame.render?.asset).filter(Boolean))].map(asset =>
+      [asset, PNG.sync.read(fs.readFileSync(path.join(repo, 'web_client/public/sprites', asset)))]));
+    return checkAtlasPadding(catalog, images);
+  }
   if (target === 'waiting-closed' || target === 'captured-death-position') {
     const { runLiveSequences } = await import('./live-sequences.mjs');
     const checks = await runLiveSequences({ scope: 'initial', mode: 'arcade', outDir: path.join(out, 'live') });
@@ -166,7 +179,7 @@ async function probe(target, out) {
     const boundaryPixels = countBoundaryPixels(png, (r,g,b) => r !== 18 || g !== 120 || b !== 90);
     const corner = [...png.data.subarray(0,4)];
     const passed = target === 'colored-map-alpha' ? JSON.stringify(corner) === '[18,120,90,255]' : boundaryPixels === 0;
-    return { target, status: passed ? 'pass' : 'fail', reason: target === 'colored-map-alpha' ? 'Transparent source corner must reveal the colored map pixel exactly.' : 'Right open Pac-Man outer sprite boundary must contain only the colored map; adjacent same-palette artwork is forbidden.', corner, boundaryPixels, dimensions:{width:png.width,height:png.height}, screenshot:'actual.png', errors, fixtures:true, frameOverrides:true, scope:'Artwork/compositing only; fixed right-open frame, no frame-selection or full-screen fidelity claim' };
+    return { target, category: 'VISUAL/ARTWORK', status: passed ? 'pass' : 'fail', reason: target === 'colored-map-alpha' ? 'Transparent source corner must reveal the colored map pixel exactly.' : 'Right open Pac-Man outer sprite boundary must contain only the colored map; adjacent same-palette artwork is forbidden.', corner, boundaryPixels, dimensions:{width:png.width,height:png.height}, screenshot:'actual.png', errors, fixtures:true, frameOverrides:true, scope:'Artwork/compositing only; fixed right-open frame, no frame-selection or full-screen fidelity claim' };
   } finally { await cleanup.run(); fs.rmSync(scratch,{recursive:true,force:true}); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -176,7 +189,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     catch(error) { json(path.join(out,'assertion.json'), { target:process.argv[3],status:'incomplete',errors:[error.stack] }); process.exitCode=1; }
   } else {
     const args=process.argv.slice(2);
-    if(args.length!==2||args[0]!=='--out'||!args[1]||args[1].startsWith('--')) { console.error('Usage: npm run validate:mutations -- --out <empty-directory>');process.exitCode=1; }
-    else try { const result=await runMutations({out:args[1]});process.exitCode=result.passed?0:1; } catch(error) {console.error(error);process.exitCode=1;}
+    if(![2,4].includes(args.length)||args[0]!=='--out'||!args[1]||args[1].startsWith('--')||(args.length===4&&(args[2]!=='--only'||!args[3]||args[3].startsWith('--')))) { console.error('Usage: npm run validate:mutations -- --out <empty-directory> [--only <mutation-name>]');process.exitCode=1; }
+    else try { const result=await runMutations({out:args[1],only:args[3]});process.exitCode=result.passed?0:1; } catch(error) {console.error(error);process.exitCode=1;}
   }
 }

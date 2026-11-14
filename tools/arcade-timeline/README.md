@@ -246,7 +246,7 @@ npm run validate:mutations -- --out /absolute/path/to/empty-mutation-evidence
 
 The runner copies tracked web/server/tooling files into disposable directories,
 links the already installed Node dependencies, and starts isolated servers with
-`GOWORK=off`. It excludes Git metadata, ROMs, ignored archives, build outputs and
+`GOWORK=off` when a behavior or screenshot probe needs them. It excludes Git metadata, ROMs, ignored archives, build outputs and
 unrelated local artifacts. No source sheet extraction or MAME recording runs.
 Copies are removed after use; baseline/mutant traces, screenshots, process logs,
 mutation file hashes and the copy inventory remain in the output directory.
@@ -259,21 +259,46 @@ and restore contiguous source-sheet sampling without atlas gutters. Each proof
 requires its own healthy baseline assertion to pass and the mutant to fail the
 same assertion with its expected failure code. Setup/browser errors, missing
 observations, an already-failing baseline, and an unchanged passing result all
-fail the proof. The command exits nonzero unless all five proofs pass and input
-hashes are unchanged. Full-screen maze failures never count as detections.
+fail the proof. The command exits nonzero unless all selected proofs pass and input
+hashes are unchanged; without `--only`, all five mutations are selected. Full-screen maze failures never count as detections.
 
 Idle and position checks reuse the real-server initial live observer. Bot resume
 uses the controlled bot channel and a real server death sequence; this is a
-control-race check, not a natural Python-bot collision claim. Alpha and gutter
-checks use a fixed right-open artwork frame on a colored map (native alpha;
-1000×700 viewport at device scale 2 for gutters). Exact frame overrides are
-confined to these artwork/compositing checks and do not prove frame selection.
+control-race check, not a natural Python-bot collision claim. The alpha check uses
+a fixed right-open artwork frame on a colored map at native scale. The separate
+`no-neighbor-sampling` screenshot diagnostic uses a 1000×700 viewport at device
+scale 2. Both are labeled `VISUAL/ARTWORK`; exact frame overrides are confined to
+these compositing checks and do not prove frame selection.
 
-Task 8's retained run detected **four of five** mutations. The gutter mutation
-passed its baseline but also passed after mutation, so its proof failed. A bounded
-60-case diagnostic (five existing viewport sizes, four directions, three artwork
-frames) found no healthy pass-to-fail boundary case: 12 passed both and 48 failed
-both. Those existing boundary failures were not counted as detections. This
-limitation remains visible; the mutation command is expected to return nonzero
-on this implementation/environment. Passing behavior tests or four detections
-must not be presented as overall arcade fidelity or complete mutation coverage.
+The gutter mutation now targets `structural-atlas-padding`, explicitly labeled
+`STRUCTURAL/ARTWORK`, with failure code `structural-atlas-padding-violation`.
+`atlas-padding.mjs` checks every catalog runtime rectangle against its actual PNG:
+the entire two-pixel band must exist inside the image and have zero alpha. It
+reports frame/pixel counts and failing frame names, rectangles, counts, and first
+concrete offending coordinates. Missing/invalid input is incomplete evidence.
+The same checker runs in `sprite-artwork.test.mjs`. This invariant detects removal
+of padding without asserting that the browser visibly samples neighboring art.
+The mutation itself still restores the original contiguous source-sheet sampling;
+it does not alter PNGs, artwork, renderer code, or extraction.
+
+For a bounded proof without any browser, server, or MAME run:
+
+```sh
+npm run validate:mutations -- --out /absolute/path/to/empty-gutter-evidence --only remove-atlas-gutters
+```
+
+The output records the selected mutation names. `runMutations({out, only,
+reference})` also accepts an explicit existing reference directory for before/after
+hash verification when that directory is outside the checkout. The default
+reference location remains the durable Task 6 path inside the checkout. Reference
+files are read only and are not required by the structural assertion.
+
+Historical evidence remains unchanged: Task 8's retained run detected **four of
+five** mutations. Its screenshot gutter target passed both baseline and mutation,
+so that proof failed. A bounded 60-case diagnostic (five viewport sizes, four
+directions, three artwork frames) found no healthy pass-to-fail boundary case:
+12 passed both and 48 failed both. Those failures are not detections. The new
+structural target supplies separate source-artwork coverage; it does not turn the
+historical visual results into detections, establish visible screen bleed, or
+constitute a fresh five-mutation run. Passing behavior or padding tests do not
+establish overall arcade fidelity.

@@ -75,3 +75,48 @@ test('actual retained bot baseline and production mutant remain valid; removed d
  const removed=baseline.rows.filter(r=>r.render.frame?.startsWith('death-'));assert.equal(removed.length,97);
  baseline.rows=baseline.rows.filter(r=>!r.render.frame?.startsWith('death-'));const result=evaluateBotDeathProbe(baseline);assert.equal(result.status,'incomplete');assert.equal(evaluateProof('bot-death-art',evaluateBotDeathProbe(retainedBot('baseline')),{...result,failureCode:'death-art-cancelled'}).status,'fail');
 });
+
+const structuralTarget = 'structural-atlas-padding';
+const structuralPass = { target: structuralTarget, category: 'STRUCTURAL/ARTWORK', status: 'pass', errors: [] };
+const structuralFail = { ...structuralPass, status: 'fail', failureCode: 'structural-atlas-padding-violation' };
+test('structural padding proof accepts only its own healthy pass-to-fail evidence', () => {
+ assert.equal(evaluateProof(structuralTarget, structuralPass, structuralFail).status, 'pass');
+});
+test('structural proof cannot relabel visual results, missing observations, or setup failures as detection', () => {
+ for (const mutated of [structuralPass, {...structuralFail,target:'no-neighbor-sampling'}, {...structuralFail,failureCode:'neighbor-boundary-pixels'}, {...structuralFail,status:'incomplete'}, {...structuralFail,errors:['Missing PNG']}, {...structuralFail,category:'VISUAL'}]) {
+  assert.equal(evaluateProof(structuralTarget,structuralPass,mutated).status,'fail');
+ }
+ assert.equal(evaluateProof(structuralTarget,structuralFail,structuralFail).status,'fail');
+});
+
+import { spawnSync } from 'node:child_process';
+// Exercise the real CLI and actual catalog/PNGs in a small disposable git root.
+// This catches a runner that ignores --only, changes the mutation, or exits zero
+// for an invalid proof, without starting any browser or server.
+test('gutter-only CLI proves actual structural removal and rejects unhealthy baselines or probe errors', t => {
+ for (const scenario of ['healthy', 'already-removed', 'missing-asset']) {
+  const root=fs.realpathSync(temporary(t)), out=path.join(fs.realpathSync(temporary(t)),'evidence');
+  for(const file of ['tools/arcade-timeline/mutations.mjs','tools/arcade-timeline/atlas-padding.mjs','web_client/src/lib/sprites/catalog.js','web_client/package.json',...['atlas.png','general.png','text.png','life.png','punctuation.png'].map(n=>'web_client/public/sprites/'+n)]) {
+   write(root,file,fs.readFileSync(new URL('../../'+file,import.meta.url)));
+  }
+  fs.symlinkSync(new URL('./node_modules',import.meta.url).pathname,path.join(root,'tools/arcade-timeline/node_modules'),'dir');
+  fs.mkdirSync(path.join(root,'web_client/node_modules'));
+  if(scenario==='already-removed')applyMutation(root,mutations.find(m=>m.name==='remove-atlas-gutters'));
+  if(scenario==='missing-asset')fs.appendFileSync(path.join(root,'web_client/src/lib/sprites/catalog.js'),"\nObject.values(catalog).forEach(frame=>{frame.render.asset='missing.png';});\n");
+  execFileSync('git',['init','-q'],{cwd:root});
+  execFileSync('git',['add','tools/arcade-timeline/mutations.mjs','tools/arcade-timeline/atlas-padding.mjs','web_client/src','web_client/public','web_client/package.json'],{cwd:root});
+  const child=spawnSync(process.execPath,['tools/arcade-timeline/mutations.mjs','--out',out,'--only','remove-atlas-gutters'],{cwd:root,encoding:'utf8'});
+  assert.equal(child.status,scenario==='healthy'?0:1,child.stderr + fs.readFileSync(path.join(out,'summary.json'),'utf8'));
+  const summary=JSON.parse(fs.readFileSync(path.join(out,'summary.json'),'utf8'));
+  assert.equal(summary.unchanged,true); assert.deepEqual(summary.selected,['remove-atlas-gutters']);
+  const result=summary.results[0];
+  assert.equal(result.category,'STRUCTURAL/ARTWORK');
+  assert.equal(result.baseline.status,scenario==='healthy'?'pass':scenario==='already-removed'?'fail':'incomplete');
+  assert.equal(result.mutated.status,'fail');
+  assert.equal(result.mutated.failureCode,'structural-atlas-padding-violation');
+  assert.equal(summary.passed,scenario==='healthy');
+  assert.ok(result.mutated.counts.nontransparentPixels>0);
+  assert.ok(result.mutated.counts.outOfBoundsPixels>0);
+  assert.equal(fs.existsSync(path.join(out,'copies')),false);
+ }
+});

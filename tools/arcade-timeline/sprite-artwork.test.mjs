@@ -11,12 +11,13 @@ test('sprite and glyph sheets have transparent black backgrounds and opaque colo
  }
 });
 
-test('rendered frames have transparent gutters so scaling cannot sample neighboring art',()=>{
+import { checkAtlasPadding } from './atlas-padding.mjs';
+test('STRUCTURAL/ARTWORK: every runtime frame has a full in-bounds two-pixel transparent band',()=>{
  const images=new Map();
- for(const [name,frame]of Object.entries(catalog)){
- const render=frame.render??frame;
- if(!images.has(render.asset))images.set(render.asset,PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/'+render.asset,import.meta.url))));
- const image=images.get(render.asset);
- for(let y=-2;y<frame.height+2;y++)for(let x=-2;x<frame.width+2;x++)if(x<0||y<0||x>=frame.width||y>=frame.height){const px=render.x+x,py=render.y+y;if(px>=0&&py>=0&&px<image.width&&py<image.height)assert.equal(image.data[(py*image.width+px)*4+3],0,`${name} samples adjacent artwork`);}
+ for(const frame of Object.values(catalog)){
+  const asset=frame.render?.asset;
+  if(asset&&!images.has(asset))images.set(asset,PNG.sync.read(fs.readFileSync(new URL('../../web_client/public/sprites/'+asset,import.meta.url))));
  }
+ const result=checkAtlasPadding(catalog,images);
+ assert.equal(result.status,'pass',JSON.stringify(result,null,2));
 });
