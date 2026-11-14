@@ -1,0 +1,142 @@
+{
+  "start.readyToGameStarted": {
+    "value": 4.2075,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "start.musicLength": {
+    "value": 4.224,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "death.caughtToFirstFrame": {
+    "value": 0.99,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "death.animationLength": {
+    "value": 2.64,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "death.endToReady": {
+    "value": 0.132,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "death.readyToResume": {
+    "value": 1.8975,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "death.frameCount": {
+    "value": 12,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.toPopup": {
+    "value": 0.0165,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.freeze": {
+    "value": 0.9405,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.toFlash": {
+    "value": 3.9435,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.frightLength": {
+    "value": 5.9235,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.flashCount": {
+    "value": 5,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.eyesSpeed": {
+    "value": 14.5761,
+    "unit": "tiles/s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "ghostEaten.eyesSoundPeriod": {
+    "value": 0.264,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.toFirstFlash": {
+    "value": 1.9305,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.flashPeriod": {
+    "value": 0.396,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.toReady": {
+    "value": 3.927,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.readyToResume": {
+    "value": 1.8645,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "levelComplete.flashCount": {
+    "value": 4,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step1.pelletsRemaining": {
+    "value": 244,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step1.loopPeriod": {
+    "value": 0.396,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step2.pelletsRemaining": {
+    "value": 123,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step2.loopPeriod": {
+    "value": 0.363,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step3.pelletsRemaining": {
+    "value": 63,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step3.loopPeriod": {
+    "value": 0.33,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step4.pelletsRemaining": {
+    "value": 27,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step5.pelletsRemaining": {
+    "value": 15,
+    "unit": "count",
+    "source": "MAME pacman, 2026-11-10"
+  },
+  "siren.step5.loopPeriod": {
+    "value": 0.264,
+    "unit": "s",
+    "source": "MAME pacman, 2026-11-10"
+  }
+}

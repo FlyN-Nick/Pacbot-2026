@@ -398,6 +398,77 @@ func (gs *gameState) resetPellets() {
 	gs.muPellets.Unlock()
 }
 
+/*
+Remove every pellet except the one closest to Pacman (Manhattan distance, ties
+going to the first in row-major order), for setting up level-complete tests.
+Off the board, Pacman keeps the first pellet in row-major order. Score, fruit,
+and ghosts are left alone.
+*/
+func (gs *gameState) clearAllButNearestPellet() {
+
+	// Read Pacman's location before locking the pellets
+	pacmanRow, pacmanCol := gs.pacmanLoc.getCoords()
+	offBoard := pacmanRow >= 32 || pacmanCol >= 32
+
+	// (Write) lock the pellets array and number of pellets
+	gs.muPellets.Lock()
+	defer gs.muPellets.Unlock()
+
+	// Find the pellet to keep
+	keepRow, keepCol := int8(-1), int8(-1)
+	bestDist := int16(-1)
+	for row := int8(0); row < mazeRows; row++ {
+		for col := int8(0); col < mazeCols; col++ {
+			if !getBit(gs.pellets[row], col) {
+				continue
+			}
+			dist := int16(0)
+			if !offBoard {
+				dist = abs16(int16(row)-int16(pacmanRow)) + abs16(int16(col)-int16(pacmanCol))
+			}
+			if bestDist < 0 || dist < bestDist {
+				keepRow, keepCol, bestDist = row, col, dist
+			}
+		}
+	}
+
+	// No pellets left: nothing to do
+	if bestDist < 0 {
+		return
+	}
+
+	// Clear everything but the kept pellet
+	gs.pellets = [mazeRows]uint32{}
+	modifyBit(&(gs.pellets[keepRow]), keepCol, true)
+	gs.numPellets = 1
+}
+
+// Clear the first n pellets in row-major order (for debugging)
+func (gs *gameState) clearPellets(n int) {
+
+	// (Write) lock the pellets array and number of pellets
+	gs.muPellets.Lock()
+	defer gs.muPellets.Unlock()
+
+	for row := int8(0); row < mazeRows && n > 0; row++ {
+		for col := int8(0); col < mazeCols && n > 0; col++ {
+			if getBit(gs.pellets[row], col) {
+				modifyBit(&(gs.pellets[row]), col, false)
+				gs.numPellets--
+				n--
+			}
+		}
+	}
+}
+
+// Absolute value of a 16-bit integer
+func abs16(x int16) int16 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 /************************** Fruit Spawning Functions **************************/
 
 // Helper function to get the number of steps until the fruit disappears

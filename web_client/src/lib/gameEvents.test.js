@@ -1,0 +1,314 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createGameEventTracker } from './gameEvents.js';
+
+const frame = (overrides = {}) => ({
+  tick: 1,
+  mode: 1,
+  lives: 3,
+  score: 0,
+  level: 1,
+  ghostCombo: 0,
+  pacman: { rowState: 10, colState: 10 },
+  ghosts: Array.from({ length: 4 }, () => ({ rowState: 0, colState: 0, frightState: 0, trappedState: 0 })),
+  fruit: { rowState: 32, colState: 32, steps: 0 },
+  pelletRows: Array(31).fill(0),
+  ...overrides,
+});
+
+const withGhosts = (ghosts) => frame({ ghosts });
+
+test('initial frame establishes a baseline without emitting events', () => {
+  const tracker = createGameEventTracker();
+  assert.deepEqual(tracker.update(frame()), []);
+});
+
+test('joining active play never emits a start cue on a later pause and resume', () => {
+  const tracker = createGameEventTracker();
+  assert.deepEqual(tracker.update(frame({ mode: 2 })), []);
+  tracker.update(frame({ tick: 2, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 3, mode: 1 })), []);
+  tracker.reset();
+  tracker.update(frame({ tick: 4, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 5, mode: 1 })).map(({ type }) => type), ['gameStarted']);
+});
+
+test('removed pellets emit regular and power pellet events with coordinates and points', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[5] = (1 << 2) | (1 << 1);
+  tracker.update(frame({ pelletRows: rows }));
+  rows[5] = 0;
+  const events = tracker.update(frame({ tick: 2, score: 60, pelletRows: rows }));
+  assert.deepEqual(events.map(({ type, row, col, points }) => ({ type, row, col, points })), [
+    { type: 'pellet', row: 5, col: 1, points: 10 },
+    { type: 'pellet', row: 5, col: 2, points: 10 },
+  ]);
+
+  const powerTracker = createGameEventTracker();
+  const powerRows = Array(31).fill(0);
+  powerRows[3] = 1 << 1;
+  powerTracker.update(frame({ pelletRows: powerRows }));
+  powerRows[3] = 0;
+  assert.deepEqual(powerTracker.update(frame({ tick: 2, score: 50, pelletRows: powerRows })).map(({ type, row, col, points }) => ({ type, row, col, points })), [
+    { type: 'powerPellet', row: 3, col: 1, points: 50 },
+  ]);
+});
+
+test('eaten ghost high-bit transitions emit one event per ghost including simultaneous transitions', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame());
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  const events = tracker.update(withGhosts(ghosts));
+  assert.deepEqual(events.map(({ type, ghostIndex }) => ({ type, ghostIndex })), [
+    { type: 'ghostEaten', ghostIndex: 0 },
+    { type: 'ghostEaten', ghostIndex: 1 },
+  ]);
+});
+
+test('fruit pickup matches Pac-Man position and score, while expiry is ignored', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2,
+    score: 100,
+    pacman: { rowState: 12, colState: 8 },
+    fruit: { rowState: 32, colState: 32, steps: 0 },
+  })).map(({ type }) => type), ['fruitEaten']);
+
+  const expiryTracker = createGameEventTracker();
+  expiryTracker.update(frame({ fruit: { rowState: 12, colState: 8, steps: 1 } }));
+  assert.deepEqual(expiryTracker.update(frame({
+    tick: 2,
+    score: 10,
+    pacman: { rowState: 12, colState: 7 },
+    fruit: { rowState: 32, colState: 32, steps: 0 },
+  })), []);
+});
+
+test('fruit collected while crossing its tile emits pickup at the original fruit position', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ pacman: { rowState: 12, colState: 7 }, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 100, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type, row, col }) => ({ type, row, col })), [{ type: 'fruitEaten', row: 12, col: 8 }]);
+});
+
+test('fruit expiry plus ten pellets elsewhere does not emit a pickup', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[5] = 0x3ff;
+  tracker.update(frame({ pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 1 } }));
+  const events = tracker.update(frame({ tick: 2, score: 100, pacman: { rowState: 5, colState: 10 } }));
+  assert.equal(events.length, 10);
+  assert.ok(events.every(({ type }) => type === 'pellet'));
+});
+
+test('fruit scoring excludes simultaneous pellet and escalating ghost awards', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[12] = 1 << 7;
+  const baseline = frame({ score: 500, ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } });
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  tracker.update(baseline);
+  const events = tracker.update(frame({
+    tick: 2, score: 1810, ghostCombo: 3, ghosts, pacman: { rowState: 12, colState: 9 },
+  }));
+  assert.deepEqual(events.map(({ type }) => type), ['pellet', 'ghostEaten', 'ghostEaten', 'fruitEaten']);
+
+  const expiryTracker = createGameEventTracker();
+  expiryTracker.update(baseline);
+  const expiryEvents = expiryTracker.update(frame({
+    tick: 2, score: 1710, ghostCombo: 3, ghosts, pacman: { rowState: 12, colState: 8 },
+  }));
+  assert.deepEqual(expiryEvents.map(({ type }) => type), ['pellet', 'ghostEaten', 'ghostEaten']);
+});
+
+test('a power pellet resets the combo used to account for simultaneous ghost scoring', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 2, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index === 0 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 350, ghostCombo: 1, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
+});
+
+test('fruit residual includes an old-combo ghost eaten before a power pellet reset', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index === 0 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 550, ghostCombo: 0, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
+});
+
+test('fruit residual includes a reset-combo ghost eaten after a power pellet', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index === 0 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 350, ghostCombo: 1, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'fruitEaten']);
+});
+
+test('one reset accounts for ghost awards on both sides of the power pellet', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = 1 << 1;
+  tracker.update(frame({ ghostCombo: 1, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 750, ghostCombo: 1, ghosts, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['powerPellet', 'ghostEaten', 'ghostEaten', 'fruitEaten']);
+});
+
+test('multiple power resets recognize a pickup only when known scoring cannot explain disappearance', () => {
+  const rows = Array(31).fill(0);
+  rows[3] = (1 << 1) | (1 << 26);
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  // With prior combo 2 and final combo 0, possible ghost totals are
+  // 600 (both between resets), 1000 (one before each), and 2400 (both before).
+  for (const [score, expectedFruit] of [[800, true], [700, false], [1200, true], [1100, false], [2600, true], [2500, false]]) {
+    const tracker = createGameEventTracker();
+    tracker.update(frame({ ghostCombo: 2, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+    const events = tracker.update(frame({ tick: 2, score, ghostCombo: 0, ghosts, pacman: { rowState: 12, colState: 9 } }));
+    assert.equal(events.some(({ type }) => type === 'fruitEaten'), expectedFruit, `score ${score}`);
+  }
+});
+
+test('multiple reset scoring at the cap omits a pickup if another chronology explains expiry', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[3] = (1 << 1) | (1 << 26);
+  tracker.update(frame({ score: 64785, ghostCombo: 2, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 1 } }));
+  const ghosts = frame().ghosts.map((ghost, index) => ({ ...ghost, trappedState: index < 2 ? 0x80 : 0 }));
+  // 750 observed points could be 100 + 600 + fruit (capped), or
+  // 100 + 1000 / 2400 without fruit (also capped).
+  const events = tracker.update(frame({ tick: 2, score: 65535, ghostCombo: 0, ghosts }));
+  assert.equal(events.some(({ type }) => type === 'fruitEaten'), false);
+});
+
+test('fruit residual handles a wrapped uint16 packet score', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ score: 65500, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 64, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['fruitEaten']);
+});
+
+test('fruit pickup is recognized when its score increment reaches the server cap', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ score: 65490, fruit: { rowState: 12, colState: 8, steps: 10 } }));
+  assert.deepEqual(tracker.update(frame({
+    tick: 2, score: 65535, pacman: { rowState: 12, colState: 9 },
+  })).map(({ type }) => type), ['fruitEaten']);
+});
+
+test('score saturation without an unexplained increment does not invent a fruit pickup', () => {
+  const rows = Array(31).fill(0);
+  rows[12] = 1 << 8;
+  for (const score of [65530, 65535]) {
+    const tracker = createGameEventTracker();
+    tracker.update(frame({ score, pelletRows: rows, fruit: { rowState: 12, colState: 8, steps: 1 } }));
+    assert.deepEqual(tracker.update(frame({
+      tick: 2, score: 65535, pacman: { rowState: 12, colState: 8 },
+    })).map(({ type }) => type), ['pellet']);
+  }
+});
+
+test('life loss and gain are distinct transitions', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame());
+  assert.deepEqual(tracker.update(frame({ tick: 2, lives: 2 })).map(({ type }) => type), ['lifeLost']);
+  assert.deepEqual(tracker.update(frame({ tick: 3, lives: 3 })).map(({ type }) => type), ['lifeGained']);
+});
+
+test('active play start and final life loss emit start and game-over cues', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ mode: 0, lives: 1 }));
+  assert.deepEqual(tracker.update(frame({ tick: 2, mode: 1, lives: 1 })).map(({ type }) => type), ['gameStarted']);
+  assert.deepEqual(tracker.update(frame({ tick: 3, mode: 0, lives: 0 })).map(({ type }) => type), ['lifeLost', 'gameOver']);
+});
+
+test('gameStarted emits once per session, including after explicit reset', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 2, mode: 1 })).map(({ type }) => type), ['gameStarted']);
+  tracker.update(frame({ tick: 3, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 4, mode: 1 })), []);
+
+  tracker.reset();
+  tracker.update(frame({ tick: 5, mode: 0 }));
+  assert.deepEqual(tracker.update(frame({ tick: 6, mode: 1 })).map(({ type }) => type), ['gameStarted']);
+});
+
+test('level change emits once and treats the new frame as a reset baseline', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[5] = 1;
+  tracker.update(frame({ pelletRows: rows }));
+  const events = tracker.update(frame({ tick: 2, level: 2, pelletRows: Array(31).fill(0) }));
+  assert.deepEqual(events.map(({ type }) => type), ['levelChanged']);
+  assert.deepEqual(tracker.update(frame({ tick: 3, score: 10, level: 2, pelletRows: rows })), []);
+});
+
+test('reset clears the baseline and event ids continue increasing', () => {
+  const tracker = createGameEventTracker();
+  const rows = Array(31).fill(0);
+  rows[1] = 1;
+  tracker.update(frame({ pelletRows: rows }));
+  rows[1] = 0;
+  const first = tracker.update(frame({ tick: 2, score: 10, pelletRows: rows }));
+  tracker.reset();
+  assert.deepEqual(tracker.update(frame({ tick: 3, lives: 1, pelletRows: Array(31).fill(0) })), []);
+  const next = tracker.update(frame({ tick: 4, lives: 2 }));
+  assert.equal(next[0].type, 'lifeGained');
+  assert.ok(next[0].id > first[0].id);
+});
+
+// The server can clear a ghost's eaten flag before the frame is sent: Pac-Man eats it with a
+// move just before a ghost update. The combo counter still rises, and the ghost loses its
+// fright and jumps into the house.
+const frightened = (rowState, colState) => ({ rowState, colState, frightState: 20, trappedState: 0 });
+const calm = (rowState, colState) => ({ rowState, colState, frightState: 0, trappedState: 0 });
+
+test('a ghost eaten without its eaten flag is still detected from the combo counter', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, pacman: { rowState: 5, colState: 7 },
+    ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200, pacman: { rowState: 5, colState: 6 },
+    ghosts: [frightened(20, 4), calm(14, 13), frightened(23, 21), frightened(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [1]);
+});
+
+test('fright ending on its own is not mistaken for an eat', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 2, ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 2,
+    ghosts: [calm(20, 4), calm(5, 7), calm(23, 21), calm(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten'), []);
+});
+
+test('an eat seen through its flag is not counted twice', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200,
+    ghosts: [frightened(20, 4), { rowState: 32, colState: 32, frightState: 20, trappedState: 0x80 }, frightened(23, 21), frightened(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [1]);
+});
+
+test('when the flag is missing, the ghost that jumped home is the one eaten', () => {
+  const tracker = createGameEventTracker();
+  tracker.update(frame({ ghostCombo: 0, score: 1000, pacman: { rowState: 20, colState: 4 },
+    ghosts: [frightened(20, 3), frightened(5, 6), frightened(23, 20), frightened(1, 1)] }));
+  // Ghost 0 jumped into the house; ghost 3 merely lost fright where it was
+  const events = tracker.update(frame({ tick: 2, ghostCombo: 1, score: 1200, pacman: { rowState: 20, colState: 3 },
+    ghosts: [calm(14, 11), frightened(5, 7), frightened(23, 21), calm(1, 2)] }));
+  assert.deepEqual(events.filter(({ type }) => type === 'ghostEaten').map(({ ghostIndex }) => ghostIndex), [0]);
+});

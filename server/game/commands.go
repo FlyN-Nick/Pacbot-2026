@@ -70,6 +70,19 @@ func (gs *gameState) interpretCommand(msg []byte) bool {
 	// Kill a pacman life (for debugging)
 	case 'k':
 		gs.decrementLives()
+
+	// Clear all but the nearest pellet (for debugging)
+	case 'c':
+		gs.clearAllButNearestPellet()
+
+	// Clear the first n pellets (for debugging)
+	case 'e':
+		if len(msg) != 2 {
+			log.Println("\033[35m\033[1mERR:  Invalid pellet clear " +
+				"(message type 'e'). Ignoring...\033[0m")
+			return false
+		}
+		gs.clearPellets(int(msg[1]))
 	}
 
 	return false

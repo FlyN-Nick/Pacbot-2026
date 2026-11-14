@@ -1,91 +1,83 @@
-<style>
-
-  /* Pacman (yellow circle) */
-  .pacman {
-
-    /* Positioning */
-    position: absolute;
-
-    /* Formatting */
-    background-color: yellow;
-    border-radius: 50%;
-
-    /* Grid-size related CSS */
-    width: var(--grid-size);
-    height: var(--grid-size);
-    transform: scale(1.5) rotate(var(--dir-angle));
-  }
-
-  /* Clip path (mouth of Pacman) */
-  .clip {
-    clip-path: polygon(-100% -100%, -100% 200%,
-                        200% 200%, 100% 80%, 45% 50%,
-                        100% 20%, 200% -100%);
-  }
-
-  /* Pacman eating */
-  .eating {
-    animation: eat 0.5s ease 1;
-  }
-
-  /* Pacman eating animation (clip path changes) */
-  @keyframes eat {
-    50% {
-      clip-path: polygon(-100% -100%, -100% 200%,
-                          200% 200%, 100% 50%, 45% 50%,
-                          100% 50%, 200% -100%);
-    }
-  }
-
-</style>
-
 <script>
+  import { onDestroy } from 'svelte';
+  import Sprite from '../sprites/Sprite.svelte';
+  import {resolvePacmanFrame,selectDeathFrame,directionFor} from '../sprites/frames.js';
+  import { GUI_TIMINGS } from '../guiTimings.js';
 
-  // Grid size, same as for other components
   export let gridSize;
-
-  // Pacman state
+  export let phase=0;
+  export let frameOverride=null;
+  export let nativeState=null;
+  export let deathElapsedOverride=null;
+  let aliveFrame=null;
+  const motionPreference=window.matchMedia("(prefers-reduced-motion: reduce)");
+  let reducedMotion=motionPreference.matches;
+  const updateMotion=()=>reducedMotion=motionPreference.matches;
+  motionPreference.addEventListener("change",updateMotion);
+  let deathStarted=0;
+  let deathElapsed=0;
+  const clock=setInterval(()=>{if(dying)deathElapsed=performance.now()-deathStarted;},16);
+  $: aliveFrame=resolvePacmanFrame({previousFrame:aliveFrame,direction:directionFor(dirX,dirY),phase:reducedMotion?0:phase,active,moving,ready});
+  $: selectedFrame=nativeState ? (nativeState.deathElapsedMs!=null ? selectDeathFrame(nativeState.deathElapsedMs) : resolvePacmanFrame({previousFrame:null,direction:nativeState.facing,phase:nativeState.phase,active:true,moving:!ready,ready})) : frameOverride??(dying||deathElapsedOverride!==null?(reducedMotion&&deathElapsedOverride===null?(deathElapsed>=2112?'blank':aliveFrame):selectDeathFrame(deathElapsedOverride??deathElapsed)):aliveFrame);
   export let pacmanRowState;
   export let pacmanColState;
+  export let active = false;
+  export let moving = false;
+  export let deathEventId = null;
+  export let deathPosition = null;
+  // READY waits closed; competition can already be moving under the label.
+  export let ready = false;
 
-  // Using the & operator to pick out the 5 lowest bits
-  $: posX = pacmanColState & 0b11111
-  $: posY = pacmanRowState & 0b11111
+  let lastX = 13;
+  let lastY = 23;
+  let lastRotation = 0;
+  let seenDeathEventId = null;
+  let dying = false;
+  let deathTimer;
 
-  // Hide the Pacman if bit 5 (32) of either coordinate is set
-  $: showPacman = ((pacmanRowState | pacmanColState) & 0b100000) ? false : true;
+  $: showPacman = ((pacmanRowState | pacmanColState) & 0x20) === 0;
+  $: posX = pacmanColState & 0x1f;
+  $: posY = pacmanRowState & 0x1f;
+  $: dirX = ((pacmanColState >> 6) << 30) >> 30;
+  $: dirY = ((pacmanRowState >> 6) << 30) >> 30;
+  $: rotation = dirX === 1 && dirY === 0 ? 0
+    : dirY === 1 && dirX === 0 ? 90
+    : dirX === -1 && dirY === 0 ? 180
+    : dirY === -1 && dirX === 0 ? 270
+    : 0;
 
-  // The below code is a sign-extension trick, taking advantage of 32-bit
-  // integer representations in JavaScript
-  $: dirX = ((pacmanColState >> 6) << 30) >> 30
-  $: dirY = ((pacmanRowState >> 6) << 30) >> 30
-
-  // Based on the direction, decide the rotation amount
-  let rotation = 0;
-  let clip = true;
-  $: {
-    clip = true;
-    if (dirX === 1 && dirY === 0) {
-      rotation = 0;
-    } else if (dirY === 1 && dirX === 0) {
-      rotation = 90;
-    } else if (dirX === -1 && dirY === 0) {
-      rotation = 180;
-    } else if (dirY === -1 && dirX === 0) {
-      rotation = 270;
-    } else {
-      clip = false;
-    }
+  $: if (showPacman && !dying) {
+    lastX = posX;
+    lastY = posY;
+    lastRotation = rotation;
   }
 
+  $: if (deathEventId != null && deathEventId !== seenDeathEventId) {
+    seenDeathEventId = deathEventId;
+    // The server may already have respawned Pac-Man while the arcade freeze
+    // plays. Death belongs to the captured position, not the current packet.
+    if (deathPosition) {
+      lastX = deathPosition.colState & 0x1f;
+      lastY = deathPosition.rowState & 0x1f;
+    } else if (showPacman) {
+      lastX = posX;
+      lastY = posY;
+      lastRotation = rotation;
+    }
+    clearTimeout(deathTimer);
+    dying = true;
+    deathStarted=performance.now();deathElapsed=0;
+    deathTimer = setTimeout(() => {
+      dying = false;
+    }, GUI_TIMINGS.deathAnimationMs);
+  }
+
+  onDestroy(() => { clearTimeout(deathTimer);clearInterval(clock);motionPreference.removeEventListener("change",updateMotion); });
 </script>
 
-{#if showPacman}
-  <div
-    class='pacman {clip ? 'clip' : ''} eating'
-    style:--grid-size='{gridSize}px'
-    style:--dir-angle='{rotation}deg'
-    style:left='{gridSize * posX}px'
-    style:top='{gridSize * posY}px'
-  />
+{#if nativeState ? nativeState.visible : showPacman || dying || deathElapsedOverride!==null}
+  <div class="pacman-position" style:left="{nativeState ? nativeState.position.x*gridSize/8 : gridSize*(dying?lastX:posX)+gridSize/2}px" style:top="{nativeState ? nativeState.position.y*gridSize/8 : gridSize*(dying?lastY:posY)+gridSize/2}px">
+    <Sprite frame={selectedFrame} scale={gridSize/8}/>
+  </div>
 {/if}
+<style>.pacman-position{position:absolute;transform:translate(-50%,-50%);line-height:0;pointer-events:none;z-index:3}</style>

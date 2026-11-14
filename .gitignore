@@ -1,1 +1,5 @@
 .DS_Store
+
+# Arcade ROMs are copyrighted; never commit them
+pacman.zip
+puckman.zip
