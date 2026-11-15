@@ -24,8 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
 	import pacbot_rs
 	HAVE_PACBOT_RS = hasattr(pacbot_rs.PacmanGym, 'game_state_bytes')
+	# Ghost-next observations: curc-pacbot-rl's ghost-next-obs branch and later
+	HAVE_GHOST_NEXT = hasattr(pacbot_rs.PacmanGym, 'ghost_next_obs')
 except ImportError:
-	HAVE_PACBOT_RS = False
+	HAVE_PACBOT_RS = HAVE_GHOST_NEXT = False
 
 # Imported in setUpClass, so that other tests in the same run can check
 # that the A* strategy never loads the DQN code.
@@ -59,11 +61,16 @@ class ObsParityTests(unittest.TestCase):
 		self.assertEqual(env.ticks_per_step, dqn_module.TICKS_PER_STEP)
 		state = GameState()
 		state.update(env.game_state_bytes())
-		for config, ignore in ((self.full_config, False), (self.purgatory_config, True)):
-			np.testing.assert_allclose(
-				dqn_module.build_obs(state, ignore_super_pellets=ignore),
-				env.obs_numpy(config), rtol=1e-6, atol=0,
-				err_msg=f'{context}, ignore_super_pellets={ignore}')
+		for ghost_next in ((False, True) if HAVE_GHOST_NEXT else (False,)):
+			if HAVE_GHOST_NEXT:
+				env.ghost_next_obs = ghost_next
+			for config, ignore in ((self.full_config, False), (self.purgatory_config, True)):
+				np.testing.assert_allclose(
+					dqn_module.build_obs(state, ignore_super_pellets=ignore, ghost_next=ghost_next),
+					env.obs_numpy(config), rtol=1e-6, atol=0,
+					err_msg=f'{context}, ignore_super_pellets={ignore}, ghost_next={ghost_next}')
+		if HAVE_GHOST_NEXT:
+			env.ghost_next_obs = False
 		self.assertEqual(dqn_module.action_mask(state), list(env.action_mask()), context)
 		self.assertEqual(dqn_module.purgatory_action_mask(state),
 		                 list(env.purgatory_action_mask()), context)

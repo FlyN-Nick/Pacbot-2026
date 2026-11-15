@@ -47,11 +47,12 @@ def _is_super_pellet(row: int, col: int) -> bool:
     return row in SUPER_PELLET_ROWS and col in SUPER_PELLET_COLS
 
 
-def build_obs(g: GameState, ignore_super_pellets: bool) -> np.ndarray:
+def build_obs(g: GameState, ignore_super_pellets: bool, ghost_next: bool = False) -> np.ndarray:
     '''
     Observation matching PacmanGym::obs in curc-pacbot-rl/pacbot_rs/src/env.rs,
     shape (17, 28, 31) indexed (channel, col, 30 - row).
-    `ignore_super_pellets` mirrors PacmanGymConfiguration.obs_ignore_super_pellets.
+    `ignore_super_pellets` mirrors PacmanGymConfiguration.obs_ignore_super_pellets,
+    `ghost_next` mirrors PacmanGym.ghost_next_obs.
     '''
     obs = np.zeros((17, 28, 31), dtype=np.float32)
     last_pellet = g.numPellets() == 1
@@ -81,15 +82,21 @@ def build_obs(g: GameState, ignore_super_pellets: bool) -> np.ndarray:
         obs[2, pc, 30 - pr] = 1.0
         obs[3, pc, 30 - pr] = 1.0
 
-    # Channels 4-7: ghosts; 8-11: "last" ghost positions, which env.rs also
-    # fills with the current positions; 12-14: mode state at each ghost
+    # Channels 4-7: ghosts; 8-11: "last" ghost positions, which env.rs fills
+    # with the current positions, or with ghost_next, each ghost's next square
+    # (one ahead in the direction it is facing); 12-14: mode state at each ghost
     for i, ghost in enumerate(g.ghosts):
         gr, gc = ghost.location.row, ghost.location.col
         if not (0 <= gr < 31 and 0 <= gc < 28):
             continue
         gobs = 30 - gr
         obs[4 + i, gc, gobs] = 1.0
-        obs[8 + i, gc, gobs] = 1.0
+        nr, nc = gr, gc
+        if ghost_next:
+            ahead_r, ahead_c = gr + ghost.location.rowDir, gc + ghost.location.colDir
+            if 0 <= ahead_r < 31 and 0 <= ahead_c < 28:
+                nr, nc = ahead_r, ahead_c
+        obs[8 + i, nc, 30 - nr] = 1.0
         if ghost.isFrightened():
             obs[14, gc, gobs] = ghost.frightSteps / GHOST_FRIGHT_STEPS
             # env.rs adds the combo value here without dividing by COMBO_MULTIPLIER
@@ -203,6 +210,8 @@ class DQNDecisionModule:
         self.env_version = int(loaded.get('env_version', 1))
         # Recorded by curc-pacbot-rl train_dqn.py (utils.checkpoint_single_model)
         self.single_model = bool(loaded.get('single_model', False))
+        # Recorded by curc-pacbot-rl train_dqn.py (utils.checkpoint_ghost_next_obs)
+        self.ghost_next_obs = bool(loaded.get('ghost_next_obs', False))
         if self.env_version not in SUPPORTED_ENV_VERSIONS:
             raise ValueError(
                 f'{checkpoint_path} was trained with environment version {self.env_version}, but '
@@ -215,7 +224,8 @@ class DQNDecisionModule:
         self.q_net.eval()
         print(f'[DQN] Loaded {model_name} (iter={loaded.get("iter_num","?")}, '
               f'env version {self.env_version}, '
-              f'{"single model" if self.single_model else "with the super pellet model"}) '
+              f'{"single model" if self.single_model else "with the super pellet model"}'
+              f'{", ghost-next observations" if self.ghost_next_obs else ""}) '
               f'on {self.device}')
 
     def _load_super_pellet_model(self, path: Path) -> None:
@@ -294,10 +304,12 @@ class DQNDecisionModule:
         # model only plays purgatory, with super pellets hidden and off limits,
         # and the fixed super pellet model plays the rest.
         if self.single_model:
-            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=False),
+            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=False,
+                                                          ghost_next=self.ghost_next_obs),
                                     action_mask(self.state))
         elif is_purgatory(self.state, self.env_version):
-            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=True),
+            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=True,
+                                                          ghost_next=self.ghost_next_obs),
                                     purgatory_action_mask(self.state))
         else:
             action = self._q_action(self.super_q_net, build_obs(self.state, ignore_super_pellets=False),
