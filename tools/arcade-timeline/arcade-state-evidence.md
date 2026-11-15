@@ -1,0 +1,50 @@
+# Initial upright adapter evidence (MAME 0.289)
+
+This adapter is intentionally limited to the two initial recordings. It does not infer expanded frightened/eyes palettes, right-facing Pac-Man, level progression, or later fruit history. Unsupported visible artwork, palettes, orientation and history reject. Hidden offscreen actors need no inferred facing. Source `unavailable` fields remain unchanged in each actual sample's `state`; canonical inputs are separate files.
+
+Source hardware interpretation: https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman_v.cpp (`pacman_scan_rows`, sprite draw loops). Clock: https://github.com/mamedev/mame/blob/mame0289/src/mame/pacman/pacman.cpp (`pacman_state::pacman`, screen set_raw). Native frame period is 384*264/(18432000/3) seconds =16.5ms. Source screenshots are reference images only, never rendering assets.
+
+For slot s, top-left x=240-coordinate[2*s]-(s<=2?1:0), y=272-coordinate[2*s+1]. Shared sprite dimensions are16x16, giving native maze-relative centers(x+8,y+8-24). No fitting, grid rounding or added actor shift occurs. Offscreen ports(6 or7,8) put actors wholly outside224x288. Slot1..4 palettes1,3,5,7 identify red/pink/cyan/orange; slot5 palette9 identifies Pac-Man. Task2 retained moving closed-Pac-Man pixel calibration proves these painted ports, including adjacent callback association.
+
+Additional empirical probes used unchanged initial reference PNGs and raw samples: initial root `/tmp/pacman-sequences-initial-20261110`, samples544,668,670. Scanning blue pupils RGB(33,33,255) within visible ghost bounding boxes gives attribute136/140 pupil rows8..9 (down);144/148 pupil x1..2,7..8 and rows6..7 (left);152/156 pupil rows2..3 (up). Even/odd artwork codes are alternating foot phases0/1; they are selected as semantic foot phase through the shared selector. Attribute128 occurs only when initial actors are offscreen and no direction is asserted. Full probe output and source hashes can be reproduced with `node evidence/initial-adapter-probe.mjs <root>`; retained observations are `adapter-observations.json` in replay outputs and `evidence/initial-adapter-observations.json` in the repository.
+
+Initial Pac-Man attributes178,186,194 are the independently observed open/half/closed LEFT cycle (codes44,46,48); convert to shared semantic phase0,66,132ms. No exact frame keys are supplied. Other visible phases reject. Death uses a single recorded onset: frame1433 holds code44,1434 first shows52, and catch is1373. Context carries emulatedFrame, deathCatchFrame and deathAnimationStartFrame. elapsed since animation onset is(frame-1434)*16.5, while catchElapsed is(frame-1373)*16.5. Codes52..63 establish recognized death state but NEVER choose elapsed time. Existing selector artwork offsets remain unchanged, so differences are expected and measured.
+
+Upright tile(r,c) maps to videoRAM offset r-2+(29-c)*32 for2<=r<34; outer rows use29-c+((r-2)&31)*32. Check: READY at screen(row20,col11) is0x252, byte82. Maze(row1,col1) is screen(4,1), offset898, byte16 (pellet). Power pellets at screen(6,1),(6,26),(26,1),(26,26) use20; color low5 bits16 shows them and0 blanks them. Frames544/662 have color16 and694 has0. Replay disables autonomous CSS blinking only for canonical pellet state, using these observed visibility inputs. Existing pellet geometry/color and maze drawing are retained, including fidelity failures.
+
+Header score is read from displayed row1 digits, columns1..6 and11..16; tile0..9 are decimal digits,64 blank. Initial high score is all blanks (zero/hidden); at668 it displays10, and at1373 displays70. This avoids unverified high BCD bytes. Player label row0,col3 is49 when1UP is painted and64 while it blinks off. Footer tiles33,32/35,34 form each spare-life icon;1373/1594 display two,1603 one even though lives RAM changed at1593. Count painted complete icons and supply count+1 to existing spareLives helper. First/cherry footer is tiles145,144/147,146 at(row34..35,col24..25), offsets5,4,37,36; require those bytes and levelByte0. Other level/fruit histories remain unavailable.
+
+Canonical eyes/frightened precedence is browser-tested through the shared Ghost selector, but raw frightened/eyes decoding is deliberately unavailable until independent source calibration. No initial sequence claims that expanded coverage.
+
+## Expanded probes (MAME0.289, Task6)
+
+The full recorder attempts bounded frightened/ghost-eaten and four real joystick
+recordings. Existing scenario RAM writes are documented in command provenance;
+no ROM bytes are exported. Directional P1 input is held from recorder frame700.
+Independent native pixel probes retained under
+`.superpowers/sdd/2026-11-10-sequence-validation/task-6-evidence` establish:
+
+- Normal ghost attr128/132 right,136/140 down,144/148 left,152/156 up:
+  blue pupils determine facing and lower-foot silhouettes determine phase.
+- Palette17blue and18white use attr112/116, foot0/1 respectively. Native
+  lower silhouettes at rows13/14 are `BB.BBB..BBB.BB`/`B...BB..BB...B` for112,
+  versus `WWWW.WWWW.WWWW`/`.WW...WW...WW` for white116.
+- Eyes palette25 uses normal direction codes. The ghostEaten recording reaches
+  down/right/up eyes and house arrival at1004; left-eyes is not reached.
+  Palette24/attr160 is a score popup. Canonical popup semantics remain
+  unsupported, including if a popup occurs in a checkpoint's neighbor frame.
+- Pac-Man open/half: right176/184, down180/188, up181/189. Closed192 is shared
+  and requires recorded directional context. Left178/186/194 is unchanged.
+  Death remains elapsed time from animation onset, never per-art-code fitting.
+- Fright reorders slots. Find the unique palette9 Pac-Man, applying the original
+  hardware position formula and first-slots correction. Calibration still needs
+  four distinct moving closed-pose PNG proofs rejecting prior machine state.
+  Frightened/eyes slots retain position/phase without inferring original ghost
+  identity; normal palette colors still identify normal ghosts.
+
+Raw fields and PNGs remain unchanged. Source sheets differ from native MAME
+artwork/placement: no rectangles are shifted or tolerance changed to match.
+`probe-mappings.json`, `pixel-probe.mjs`, raw screenshots and final reference/
+replay trees retain measurements. Unreached normal directions, left-eyes,
+higher HUD progression, popup rendering, full-screen last-life and full-screen
+level-clear mappings remain unavailable.

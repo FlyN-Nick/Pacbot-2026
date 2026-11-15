@@ -1,0 +1,33 @@
+name: Web client
+
+on:
+  push:
+    paths:
+      - "web_client/**"
+      - "tools/arcade-timeline/**"
+      - "config.json"
+      - ".github/workflows/web-client.yml"
+  pull_request:
+    paths:
+      - "web_client/**"
+      - "tools/arcade-timeline/**"
+      - "config.json"
+      - ".github/workflows/web-client.yml"
+
+jobs:
+  test:
+    name: Web client and arcade timeline tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Test web client
+        working-directory: web_client
+        run: npm ci && npm test
+      - name: Test arcade timeline tools
+        working-directory: tools/arcade-timeline
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci && npm test

@@ -15,12 +15,12 @@
     border-radius: 5px;
 
     /* Grid-size related CSS */
-    width:       calc(5   * var(--grid-size));
-    height:      calc(3   * var(--grid-size));
-    line-height: calc(3   * var(--grid-size));
-    left:        950px;
-    top:         10px;
-    font-size:   calc(0.9 * var(--grid-size));
+    width:       calc(2.5 * var(--grid-size));
+    height:      calc(1.5 * var(--grid-size));
+    line-height: calc(1.5 * var(--grid-size));
+    left:        0;
+    top:         calc(10 * var(--grid-size));
+    font-size:   calc(0.65 * var(--grid-size));
     font-family: 'Courier New', Courier, monospace;
     color:rgb(0, 0, 0);
   }

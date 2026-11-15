@@ -14,10 +14,10 @@
     cursor: pointer;
 
     /* Grid-size related CSS */
-    width:       calc(5   * var(--grid-size));
-    height:      calc(3   * var(--grid-size));
-    line-height: calc(3   * var(--grid-size));
-    left:        calc(0   * var(--grid-size));
+    width:       calc(2.5 * var(--grid-size));
+    height:      calc(1.5 * var(--grid-size));
+    line-height: calc(1.5 * var(--grid-size));
+    left:        calc(2.5 * var(--grid-size));
     top:         calc(10  * var(--grid-size));
     font-size:   calc(0.9 * var(--grid-size));
   }
@@ -38,10 +38,10 @@
     opacity: 0.8;
 
     /* Grid-size related CSS */
-    width:  calc(2   * var(--grid-size) + 2 * var(--pad));
-    height: calc(2   * var(--grid-size) + 2 * var(--pad));
-    top:    calc(0.5 * var(--grid-size) - var(--pad));
-    left:   calc(1.5 * var(--grid-size) - var(--pad));
+    width:  calc(1   * var(--grid-size) + 2 * var(--pad));
+    height: calc(1   * var(--grid-size) + 2 * var(--pad));
+    top:    calc(0.25 * var(--grid-size) - var(--pad));
+    left:   calc(0.75 * var(--grid-size) - var(--pad));
   }
 
   /* Ticker circular outline */
@@ -68,8 +68,8 @@
     opacity: 0.8;
 
     /* Grid-size related CSS */
-    width:  calc(0.3 * var(--grid-size));
-    height: calc(3   * var(--grid-size));
+    width:  calc(0.15 * var(--grid-size));
+    height: calc(1.5 * var(--grid-size));
   }
 
 </style>
@@ -134,32 +134,32 @@
 
     <!-- Circular outline of ticker -->
     <circle
-      cx='{gridSize+pad}'
-      cy='{gridSize+pad}'
-      r='{gridSize}'
+      cx='{gridSize/2+pad}'
+      cy='{gridSize/2+pad}'
+      r='{gridSize/2}'
     />
 
     <!-- Filled ticker region -->
     <path
-      d=' M {gridSize+pad} {gridSize+pad}
-          L {gridSize+pad} {pad}
-          A {gridSize} {gridSize} 0
+      d=' M {gridSize/2+pad} {gridSize/2+pad}
+          L {gridSize/2+pad} {pad}
+          A {gridSize/2} {gridSize/2} 0
             {longArcFlag} 1
-            {gridSize + gridSize * sine + pad}
-            {gridSize - gridSize * cosine + pad}
+            {gridSize/2 + gridSize/2 * sine + pad}
+            {gridSize/2 - gridSize/2 * cosine + pad}
           z'
     />
   </svg>
 
   <svg
     class='mode-bar'
-    style:--bar-height='{modeFraction * 3 * gridSize}px'
+    style:--bar-height='{modeFraction * 1.5 * gridSize}px'
     style:--color='{modeColor}'
   >
     <path
-    d=' M {0   * gridSize} {3 * gridSize}
-        H {0.3 * gridSize}
-        V {(1 - modeFraction) * 3 * gridSize}
+    d=' M {0   * gridSize} {1.5 * gridSize}
+        H {0.15 * gridSize}
+        V {(1 - modeFraction) * 1.5 * gridSize}
         H {0   * gridSize}
         z'
     />

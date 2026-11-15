@@ -12,6 +12,7 @@
     border: none;
     display: flex;
     background-color: rgba(0,0,0,0);
+    transition: background-color 70ms linear;
     padding: 0;
     margin: 0;
     box-shadow: inset 0px 0px 1px 1px rgba(255,255,255,0.05);
@@ -90,6 +91,7 @@
 
 <script>
 
+  export let animate=true;
   export let gridSize;
   export let pelletGrid;
   export let botSocket;
@@ -101,7 +103,7 @@
 
   const hello = (i, j) => {
     console.log("hello from " + i + " , " + j)
-    botSocket.send(`clicked ${i} ${j}`)
+    if (botSocket?.readyState === WebSocket.OPEN) botSocket.send(`clicked ${i} ${j}`)
   }
 
   const pelletMods = [' hidden', '', ' super']
@@ -125,6 +127,7 @@
         >
           <span
             class={'pellet' + pelletMods[pelletGrid[i][j]]}
+            style:animation={animate?undefined:'none'}
             style:width='{pellet_size}px'
             style:height='{pellet_size}px'
           />
