@@ -23,6 +23,7 @@ import json
 import statistics
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from struct import unpack_from
@@ -95,30 +96,90 @@ class Move:
 	turn: bool  # direction differs from the previous counted move
 
 
-def moves(events: Sequence[Event]) -> list[Move]:
-	'''Ticks between consecutive cell entries, keeping only clean single-cell moves'''
-	result: list[Move] = []
-	entry: Event | None = None  # when Pacman entered its current cell, if usable
-	last_dir: tuple[int, int] | None = None
-	for prev, curr in zip(events, events[1:]):
+class MoveTracker:
+	'''
+	Ticks between consecutive cell entries, keeping only clean single-cell moves, from events
+	given one at a time (each a change of cell, mode, lives or level, as SpeedLogger records them)
+	'''
+
+	def __init__(self) -> None:
+		self._prev: Event | None = None
+		self._entry: Event | None = None  # when Pacman entered its current cell, if usable
+		self._last_dir: tuple[int, int] | None = None
+
+	def add(self, curr: Event) -> Move | None:
+		'''The move this event completes, if it completes a clean one'''
+		prev, self._prev = self._prev, curr
+		if prev is None:
+			return None
 		paused = curr.mode == GameModes.PAUSED or prev.mode == GameModes.PAUSED
 		reset = (curr.lives, curr.level) != (prev.lives, prev.level)
 		if paused or reset:
-			entry, last_dir = None, None
-			continue
+			self._entry, self._last_dir = None, None
+			return None
 		if (curr.row, curr.col) == (prev.row, prev.col):
-			continue  # mode change between scatter and chase only
+			return None  # mode change between scatter and chase only
 		step = (curr.row - prev.row, curr.col - prev.col)
 		ticks = (curr.tick - prev.tick) % TICK_MODULUS
 		if abs(step[0]) + abs(step[1]) != 1 or ticks > TICK_MODULUS // 2:
-			entry, last_dir = None, None  # jump (missed frames, respawn) or counter reset
-			continue
+			self._entry, self._last_dir = None, None  # jump (missed frames, respawn) or counter reset
+			return None
+		move = None
+		entry = self._entry
 		if entry is not None and (prev.row, prev.col) == (entry.row, entry.col):
 			span = (curr.tick - entry.tick) % TICK_MODULUS
-			result.append(Move(span, curr.wall_time - entry.wall_time,
-			                   last_dir is not None and step != last_dir))
-		entry, last_dir = curr, step
-	return result
+			move = Move(span, curr.wall_time - entry.wall_time,
+			            self._last_dir is not None and step != self._last_dir)
+		self._entry, self._last_dir = curr, step
+		return move
+
+
+def moves(events: Sequence[Event]) -> list[Move]:
+	'''Ticks between consecutive cell entries, keeping only clean single-cell moves'''
+	tracker = MoveTracker()
+	return [move for move in map(tracker.add, events) if move is not None]
+
+
+class LiveSpeed:
+	'''
+	Pacman's speed during a game, in game ticks per cell, from the server's state broadcasts:
+	the median of the last `window` clean moves (as moves() counts them), clamped to the speeds
+	the network was trained at (`low`..`high`), since its speed input means nothing outside them.
+	Until `min_moves` moves have been measured, it is `default` (the old fixed speed, 8).
+
+	The median keeps the estimate steady through the odd slow move, like a wait the policy chose
+	or a stall of the robot, and lets it follow a lasting change within a few moves.
+	'''
+
+	def __init__(self, default: float = 8, low: float = min(TRAINING_SPEEDS), high: float = max(TRAINING_SPEEDS),
+	             window: int = 10, min_moves: int = 3) -> None:
+		self.default, self.low, self.high = default, low, high
+		self.min_moves = min_moves
+		self.recent: deque[int] = deque(maxlen=window)
+		self._tracker = MoveTracker()
+		self._last: Event | None = None
+
+	def observe(self, message: bytes, wall_time: float | None = None) -> None:
+		'''One server state broadcast'''
+		self.observe_event(parse_state(message, time.time() if wall_time is None else wall_time))
+
+	def observe_event(self, event: Event) -> None:
+		if self._last is not None and event.key() == self._last.key():
+			return  # nothing moved: only changes count, as SpeedLogger records them
+		self._last = event
+		move = self._tracker.add(event)
+		if move is not None:
+			self.recent.append(move.ticks)
+
+	@property
+	def measured(self) -> bool:
+		return len(self.recent) >= self.min_moves
+
+	@property
+	def ticks_per_move(self) -> float:
+		if not self.measured:
+			return self.default
+		return min(self.high, max(self.low, statistics.median(self.recent)))
 
 
 def _percentile(sorted_values: Sequence[float], q: float) -> float:

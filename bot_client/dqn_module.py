@@ -23,9 +23,12 @@ FRUIT_POINTS = 100
 CHASE_DURATION = 180  # GameMode::CHASE.duration()
 LAST_REWARD = 3_000   # env.rs: bonus for clearing the board, shown on the last pellet
 
-# Game ticks per Pacman action. env.rs trains with NORMAL_TICKS_PER_STEP = 8,
-# which is also the simulation cadence below (one move per 1/3 s at 24 fps).
+# Game ticks per Pacman action. env.rs's NORMAL_TICKS_PER_STEP = 8 is the simulation
+# cadence below (one move per 1/3 s at 24 fps) and the speed assumed until the live estimate
+# (speedLogger.LiveSpeed) has measured a few moves. Training covers 4 to the checkpoint's
+# max_speed (14 unless its config says otherwise).
 TICKS_PER_STEP = 8
+DEFAULT_MAX_SPEED = 14
 
 # env.rs are_ghosts_close(): summed Manhattan distance to the ghosts below this
 GHOSTS_CLOSE_TOTAL_DISTANCE = 30
@@ -47,11 +50,13 @@ def _is_super_pellet(row: int, col: int) -> bool:
     return row in SUPER_PELLET_ROWS and col in SUPER_PELLET_COLS
 
 
-def build_obs(g: GameState, ignore_super_pellets: bool) -> np.ndarray:
+def build_obs(g: GameState, ignore_super_pellets: bool,
+              ticks_per_step: float = TICKS_PER_STEP) -> np.ndarray:
     '''
     Observation matching PacmanGym::obs in curc-pacbot-rl/pacbot_rs/src/env.rs,
     shape (17, 28, 31) indexed (channel, col, 30 - row).
     `ignore_super_pellets` mirrors PacmanGymConfiguration.obs_ignore_super_pellets.
+    `ticks_per_step` is Pacman's speed, in game ticks per move (channel 15).
     '''
     obs = np.zeros((17, 28, 31), dtype=np.float32)
     last_pellet = g.numPellets() == 1
@@ -99,7 +104,7 @@ def build_obs(g: GameState, ignore_super_pellets: bool) -> np.ndarray:
             obs[ch, gc, gobs] = g.modeSteps / CHASE_DURATION
 
     # Channel 15: Pacman speed relative to ghost updates
-    obs[15, :, :] = TICKS_PER_STEP / g.updatePeriod
+    obs[15, :, :] = ticks_per_step / g.updatePeriod
 
     # Channel 16: super pellet locations
     if not ignore_super_pellets:
@@ -172,7 +177,13 @@ class DQNDecisionModule:
     '''
 
     def __init__(self, state: GameState, checkpoint_path: str, log: bool = False,
-                 hybrid_mode: bool = False, force_no_bot: bool = False) -> None:
+                 hybrid_mode: bool = False, force_no_bot: bool = False,
+                 speed: float | None = None) -> None:
+        '''
+        `speed` fixes Pacman's speed (game ticks per move) that the network is told; by default
+        it is measured during the game (live_speed, which the client feeds every server
+        broadcast), clamped to the speeds the checkpoint was trained at.
+        '''
         self.state = state
         self.log = log
         self.hybrid_mode = hybrid_mode
@@ -184,6 +195,12 @@ class DQNDecisionModule:
         )
         self._using_astar: bool = False
         self._load_model(checkpoint_path)
+        self.fixed_speed = speed
+        self.live_speed = None
+        if speed is None:
+            from speedLogger import LiveSpeed
+            self.live_speed = LiveSpeed(default=TICKS_PER_STEP, low=4, high=self.max_speed)
+        self._reported_speed: float | None = None
         self.super_q_net = None
         if not self.single_model:
             self._load_super_pellet_model(SUPER_PELLET_MODEL_PATH)
@@ -209,6 +226,8 @@ class DQNDecisionModule:
                 f'this bot only supports versions {SUPPORTED_ENV_VERSIONS}. Update dqn_module.py '
                 f'to match curc-pacbot-rl/pacbot_rs/src/env.rs.')
         model_name: str = loaded.get('config', {}).get('model', 'QNetV2')
+        # The slowest speed it was trained at (most game ticks per move)
+        self.max_speed = int(loaded.get('config', {}).get('max_speed', DEFAULT_MAX_SPEED))
         model_class = getattr(_dqn_models, model_name)
         self.q_net = model_class(OBS_SHAPE, NUM_ACTIONS).to(self.device)
         self.q_net.load_state_dict(loaded['state_dict'])
@@ -269,6 +288,17 @@ class DQNDecisionModule:
     # Inference
     # ------------------------------------------------------------------
 
+    def ticks_per_step(self) -> float:
+        '''Pacman's speed to tell the network: fixed, or the live estimate'''
+        if self.fixed_speed is not None:
+            return self.fixed_speed
+        speed = self.live_speed.ticks_per_move
+        if self.log and speed != self._reported_speed:
+            source = 'measured' if self.live_speed.measured else 'assumed until a few moves are measured'
+            print(f'[DQN] Speed: {speed:g} game ticks per cell ({source})')
+        self._reported_speed = speed
+        return speed
+
     def get_direction(self) -> Directions:
         any_frightened = self._any_ghost_frightened()
         stay_in_astar = self._using_astar and self._astar_targeting_nearby_super_pellet()
@@ -289,18 +319,19 @@ class DQNDecisionModule:
             DebugServer.instance.reset_cell_colors()
             DebugServer.instance.clear_path()
 
+        speed = self.ticks_per_step()
         # Same split as training (utils.step_env_once): a single-model checkpoint
         # plays every state with the full observation; otherwise the trained
         # model only plays purgatory, with super pellets hidden and off limits,
         # and the fixed super pellet model plays the rest.
         if self.single_model:
-            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=False),
+            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=False, ticks_per_step=speed),
                                     action_mask(self.state))
         elif is_purgatory(self.state, self.env_version):
-            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=True),
+            action = self._q_action(self.q_net, build_obs(self.state, ignore_super_pellets=True, ticks_per_step=speed),
                                     purgatory_action_mask(self.state))
         else:
-            action = self._q_action(self.super_q_net, build_obs(self.state, ignore_super_pellets=False),
+            action = self._q_action(self.super_q_net, build_obs(self.state, ignore_super_pellets=False, ticks_per_step=speed),
                                     action_mask(self.state))
 
         return _ACTION_TO_DIR[action]
