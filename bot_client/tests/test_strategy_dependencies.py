@@ -59,7 +59,7 @@ assert low_level.s is None
         self.assertIs(result, sentinel)
         constructor.assert_called_once_with(
             state, "/tmp/model.ckpt", False,
-            hybrid_mode=False, force_no_bot=False,
+            hybrid_mode=False, force_no_bot=False, speed=None,
         )
 
     def test_hybrid_strategy_enables_astar_fallback(self):
@@ -78,7 +78,7 @@ assert low_level.s is None
         self.assertIs(result, sentinel)
         constructor.assert_called_once_with(
             state, "/tmp/model.ckpt", False,
-            hybrid_mode=True, force_no_bot=False,
+            hybrid_mode=True, force_no_bot=False, speed=None,
         )
 
 

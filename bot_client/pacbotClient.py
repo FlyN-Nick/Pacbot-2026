@@ -63,12 +63,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 	                    help='Suppress sending location updates to the game server (for physical competition use)')
 	parser.add_argument('--force_no_bot', action='store_true',
 	                    help='Skip robot socket connection (simulate without physical bot)')
+	parser.add_argument('--speed', default='live',
+	                    help='Pacman speed the DQN is told, in game ticks per cell: "live" (default) '
+	                    'measures it during the game from the server broadcasts, or a fixed number '
+	                    '(8 is the old fixed value)')
 	parser.add_argument('--log-speed', metavar='CSV', default=None,
 	                    help='Record the game ticks Pacman takes per cell to this file '
 	                    '(summarize with: python speedLogger.py summarize CSV)')
 	args = parser.parse_args(argv)
 	if args.strategy in ('dqn', 'hybrid') and not args.checkpoint:
 		parser.error(f'--checkpoint is required when --strategy={args.strategy}')
+	if args.speed != 'live':
+		try:
+			args.speed = float(args.speed)
+		except ValueError:
+			parser.error(f'--speed must be "live" or a number of game ticks per cell, not {args.speed!r}')
+		if args.speed <= 0:
+			parser.error('--speed must be positive')
 	if args.force_no_bot:
 		args.competition_mode = False
 	return args
@@ -79,7 +90,8 @@ def make_decision_module(args: argparse.Namespace, state: GameState) -> object:
 		from dqn_module import DQNDecisionModule
 		return DQNDecisionModule(state, args.checkpoint, args.debug,
 		                        hybrid_mode=(args.strategy == 'hybrid'),
-		                        force_no_bot=args.force_no_bot)
+		                        force_no_bot=args.force_no_bot,
+		                        speed=None if getattr(args, 'speed', 'live') == 'live' else args.speed)
 	return DecisionModule(state, args.debug, force_no_bot=args.force_no_bot)
 
 class PacbotClient:
@@ -207,6 +219,9 @@ class PacbotClient:
 				# Recorded before the state update, which skips messages while the state is locked
 				if self.speedLogger is not None:
 					self.speedLogger.observe(messageBytes)
+				liveSpeed = getattr(self.decisionModule, 'live_speed', None)
+				if liveSpeed is not None:
+					liveSpeed.observe(messageBytes)
 
 				# Update the state, given this message from the server
 				should_resume = self.state.update(messageBytes)

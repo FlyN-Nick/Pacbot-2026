@@ -37,6 +37,8 @@ Other useful files:
   ```
 
   `record` never sends anything to the server, so it can run next to any client, including at competition. The bot client can also record its own games with `--log-speed robot-run.csv` (rows are written as they happen, so the file is complete even if the client is killed; it prints the summary when it disconnects). The summary reports the spread of ticks per cell (median and percentiles, straight moves and moves after a turn separately), the game clock rate, and whether any of the robot's moves fall outside the trained range. Waiting in place looks like a slow move, so the middle of the distribution is the robot's speed, and the long tail is mostly waiting.
+
+  The DQN bot also measures the speed live: it tells the network (observation channel 15) the median of Pacman's last 10 clean moves, in game ticks per cell, clamped to the speeds the checkpoint was trained at (4 to its `max_speed`, 14 unless its config says otherwise), and assumes 8 until 3 moves have been measured. `--speed 8` (or any number) fixes the speed instead, as the bot did before. With `--debug` it prints the speed whenever it changes.
 - `pacbotAgent.py`: upstream's minimal agent template (not used by this client)
 - `gameState.py`: parsed game state and prediction helpers
 - `walls.py`: binary maze walls, matching `initWalls` in the server
