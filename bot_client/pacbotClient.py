@@ -70,6 +70,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 	parser.add_argument('--log-speed', metavar='CSV', default=None,
 	                    help='Record the game ticks Pacman takes per cell to this file '
 	                    '(summarize with: python speedLogger.py summarize CSV)')
+	parser.add_argument('--search', default='off',
+	                    help='DQN/AlphaZero: play every move with the Gumbel search through the Rust game '
+	                    '(needs --extra search): "off" (default), a number of simulations per move, '
+	                    'or "auto" to scale them to the time a move takes at Pacman\'s speed')
+	parser.add_argument('--search-max-sims', type=int, default=512,
+	                    help='With --search auto: the most simulations per move (default 512)')
+	parser.add_argument('--search-budget', type=float, default=0.5,
+	                    help='With --search auto: the share of a move\'s time to search for (default 0.5)')
+	parser.add_argument('--search-temperature', type=float, default=0.3,
+	                    help='With --search and a DQN: the move priors are its Q values over this (default 0.3)')
 	args = parser.parse_args(argv)
 	if args.strategy in ('dqn', 'hybrid') and not args.checkpoint:
 		parser.error(f'--checkpoint is required when --strategy={args.strategy}')
@@ -80,6 +90,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 			parser.error(f'--speed must be "live" or a number of game ticks per cell, not {args.speed!r}')
 		if args.speed <= 0:
 			parser.error('--speed must be positive')
+	if args.search not in ('off', 'auto'):
+		try:
+			args.search = int(args.search)
+		except ValueError:
+			parser.error(f'--search must be "off", "auto" or a number of simulations, not {args.search!r}')
+		if args.search < 1:
+			parser.error('--search needs at least 1 simulation')
+	if args.search != 'off' and args.strategy == 'astar':
+		parser.error('--search needs --strategy dqn or hybrid')
+	if args.search_max_sims < 1:
+		parser.error('--search-max-sims must be at least 1')
+	if not 0 < args.search_budget <= 1:
+		parser.error('--search-budget must be in (0, 1]')
+	if args.search_temperature <= 0:
+		parser.error('--search-temperature must be positive')
 	if args.force_no_bot:
 		args.competition_mode = False
 	return args
@@ -91,7 +116,11 @@ def make_decision_module(args: argparse.Namespace, state: GameState) -> object:
 		return DQNDecisionModule(state, args.checkpoint, args.debug,
 		                        hybrid_mode=(args.strategy == 'hybrid'),
 		                        force_no_bot=args.force_no_bot,
-		                        speed=None if getattr(args, 'speed', 'live') == 'live' else args.speed)
+		                        speed=None if getattr(args, 'speed', 'live') == 'live' else args.speed,
+		                        search=None if getattr(args, 'search', 'off') == 'off' else args.search,
+		                        search_max_sims=getattr(args, 'search_max_sims', 512),
+		                        search_budget=getattr(args, 'search_budget', 0.5),
+		                        search_temperature=getattr(args, 'search_temperature', 0.3))
 	return DecisionModule(state, args.debug, force_no_bot=args.force_no_bot)
 
 class PacbotClient:

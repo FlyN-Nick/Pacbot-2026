@@ -1,7 +1,8 @@
 name: Observation parity
 
 # Checks that the bot's DQN observations, action masks, and model choice match
-# the RL training environment (bot_client/tests/test_obs_parity.py). It builds
+# the RL training environment (bot_client/tests/test_obs_parity.py), and that the
+# bot's search plays from the server's state (bot_client/tests/test_search.py). It builds
 # curc-pacbot-rl's Rust environment from source, so it only runs on demand:
 # use "Run workflow" on the Actions tab, or
 #   gh workflow run parity.yml --ref <branch>
@@ -30,7 +31,11 @@ jobs:
         run: >
           uv run --locked --extra dqn --group parity --python 3.11 python -c
           "import pacbot_rs, torch, safetensors, pacbot_rl_models;
-          assert hasattr(pacbot_rs.PacmanGym, 'game_state_bytes'), 'pacbot_rs is too old'"
+          assert hasattr(pacbot_rs.PacmanGym, 'game_state_bytes'), 'pacbot_rs is too old';
+          assert hasattr(pacbot_rs, 'gumbel_search'), 'pacbot_rs has no search'"
       - name: Test observation parity
         working-directory: bot_client
         run: uv run --locked --extra dqn --group parity --python 3.11 python -m unittest tests.test_obs_parity -v
+      - name: Test playing with search
+        working-directory: bot_client
+        run: uv run --locked --extra dqn --group parity --python 3.11 python -m unittest tests.test_search -v
