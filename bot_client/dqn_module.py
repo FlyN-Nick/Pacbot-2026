@@ -10,6 +10,7 @@ from time import time
 import low_level
 from low_level import send_direction, unstuck
 
+import pacbot_rl_models as _rl_models
 from pacbot_rl_models import models as _dqn_models
 
 # Observation / action constants (from pacbot_rs_2/variables.rs and game_modes.rs)
@@ -170,6 +171,14 @@ _ACTION_TO_DIR = [
 HYBRID_GHOST_RADIUS = 3
 
 
+def _model_class(name: str) -> type:
+    '''A network class by the name a checkpoint records (the package's exports, then models.py)'''
+    model_class = getattr(_rl_models, name, None) or getattr(_dqn_models, name, None)
+    if model_class is None:
+        raise ValueError(f'Unknown model {name!r}: update the curc-pacbot-rl submodule')
+    return model_class
+
+
 class DQNDecisionModule:
     '''
     Decision module that uses a pretrained DQN to select Pacbot actions.
@@ -178,11 +187,18 @@ class DQNDecisionModule:
 
     def __init__(self, state: GameState, checkpoint_path: str, log: bool = False,
                  hybrid_mode: bool = False, force_no_bot: bool = False,
-                 speed: float | None = None) -> None:
+                 speed: float | None = None, search: int | str | None = None,
+                 search_max_sims: int = 512, search_budget: float = 0.5,
+                 search_temperature: float = 0.3) -> None:
         '''
         `speed` fixes Pacman's speed (game ticks per move) that the network is told; by default
         it is measured during the game (live_speed, which the client feeds every server
         broadcast), clamped to the speeds the checkpoint was trained at.
+
+        `search` plays every move with the Gumbel search (searchPlanner) instead of the
+        network's best move: a number of simulations per move, or "auto" to scale them to the
+        time a move takes at Pacman's speed (`search_budget` of it, at most `search_max_sims`).
+        A DQN drives the search through its Q values over `search_temperature`.
         '''
         self.state = state
         self.log = log
@@ -205,6 +221,10 @@ class DQNDecisionModule:
         if not self.single_model:
             self._load_super_pellet_model(SUPER_PELLET_MODEL_PATH)
 
+        self.planner = None
+        if search is not None:
+            self._make_planner(search, search_max_sims, search_budget, search_temperature)
+
         if hybrid_mode:
             from decisionModule import DecisionModule
             self._astar = DecisionModule(state, log, hybrid_mode=True)
@@ -225,14 +245,21 @@ class DQNDecisionModule:
                 f'{checkpoint_path} was trained with environment version {self.env_version}, but '
                 f'this bot only supports versions {SUPPORTED_ENV_VERSIONS}. Update dqn_module.py '
                 f'to match curc-pacbot-rl/pacbot_rs/src/env.rs.')
-        model_name: str = loaded.get('config', {}).get('model', 'QNetV2')
+        self.config: dict = loaded.get('config', {})
+        model_name: str = self.config.get('model', 'QNetV2')
         # The slowest speed it was trained at (most game ticks per move)
-        self.max_speed = int(loaded.get('config', {}).get('max_speed', DEFAULT_MAX_SPEED))
-        model_class = getattr(_dqn_models, model_name)
+        self.max_speed = int(self.config.get('max_speed', DEFAULT_MAX_SPEED))
+        self.ghost_next_obs = bool(loaded.get('ghost_next_obs', False))
+        model_class = _model_class(model_name)
+        # AlphaZero checkpoints (curc-pacbot-rl train_alphazero.py): a policy and a value
+        # instead of Q values; without search the bot plays the policy's most likely move
+        self.alphazero = issubclass(model_class, _dqn_models.PVNetV2)
         self.q_net = model_class(OBS_SHAPE, NUM_ACTIONS).to(self.device)
         self.q_net.load_state_dict(loaded['state_dict'])
         self.q_net.eval()
-        print(f'[DQN] Loaded {model_name} (iter={loaded.get("iter_num","?")}, '
+        if self.alphazero and not self.single_model:
+            raise ValueError(f'{checkpoint_path}: AlphaZero checkpoints are single-model')
+        print(f'[DQN] Loaded {model_name} (iter={loaded.get("iter_num", loaded.get("moves", "?"))}, '
               f'env version {self.env_version}, '
               f'{"single model" if self.single_model else "with the super pellet model"}) '
               f'on {self.device}')
@@ -244,11 +271,38 @@ class DQNDecisionModule:
         self.super_q_net.eval()
         print(f'[DQN] Loaded super pellet model {path.name} on {self.device}')
 
+    def _make_planner(self, search: int | str, max_sims: int, budget: float,
+                      temperature: float) -> None:
+        if not self.single_model:
+            raise ValueError('Search needs a single-model checkpoint (trained with --single-model)')
+        if self.ghost_next_obs:
+            raise ValueError('This checkpoint was trained with ghost-next observations, '
+                             'which the bot does not build yet')
+        import searchPlanner
+        if self.alphazero:
+            evaluator = searchPlanner.PolicyValueEvaluator(self.q_net, self.device)
+        else:
+            evaluator = searchPlanner.QNetworkEvaluator(self.q_net, self.device, temperature)
+        sims = None if search == 'auto' else int(search)
+        self.planner = searchPlanner.SearchPlanner(
+            evaluator, searchPlanner.search_settings(self.config, self.alphazero), self.env_version,
+            sims=sims, max_sims=max_sims, budget=budget)
+        per_sim = self.planner.warm_up()
+        if sims is None:
+            print(f'[DQN] Search: {per_sim * 1000:.2f} ms per simulation, so '
+                  f'{self.planner.sims_for(4)} simulations per move at speed 4, '
+                  f'{self.planner.sims_for(8)} at 8 and {self.planner.sims_for(14)} at 14 '
+                  f'({budget:.0%} of each move\'s time, at most {max_sims})')
+        else:
+            print(f'[DQN] Search: {sims} simulations per move ({per_sim * sims * 1000:.0f} ms)')
+
     def _q_action(self, net: torch.nn.Module, obs: np.ndarray, mask: list[bool]) -> int:
         obs_t = torch.from_numpy(obs).unsqueeze(0).to(self.device)
         mask_t = torch.tensor(mask, dtype=torch.bool, device=self.device).unsqueeze(0)
         with torch.no_grad():
             q_vals = net(obs_t)        # (1, 5)
+            if isinstance(q_vals, tuple):
+                q_vals = q_vals[0]     # an AlphaZero network: the policy's logits
             q_vals[~mask_t] = -float('inf')
             return int(q_vals.argmax(dim=1).item())
 
@@ -300,6 +354,22 @@ class DQNDecisionModule:
         return speed
 
     def get_direction(self) -> Directions:
+        choice = self._choose()
+        return self._search(*choice) if isinstance(choice, tuple) else choice
+
+    def _search(self, state_bytes: bytes, speed: float) -> Directions:
+        '''Plays the move the search picks from these server bytes'''
+        action = self.planner.plan(state_bytes, speed)
+        if self.log:
+            print(f'[DQN] Search: {self.planner.last_sims} simulations in '
+                  f'{self.planner.last_seconds * 1000:.0f} ms')
+        return _ACTION_TO_DIR[action]
+
+    def _choose(self) -> Directions | tuple[bytes, float]:
+        '''
+        The move to play, or, when the move is the search's, the (server bytes, speed) to search
+        from: the decision loop runs the search in a worker thread.
+        '''
         any_frightened = self._any_ghost_frightened()
         stay_in_astar = self._using_astar and self._astar_targeting_nearby_super_pellet()
         if self.hybrid_mode and (self._ghost_within_radius() or any_frightened or stay_in_astar):
@@ -320,6 +390,9 @@ class DQNDecisionModule:
             DebugServer.instance.clear_path()
 
         speed = self.ticks_per_step()
+        if self.planner is not None:
+            # The state as the server sent it (it stays locked while the search runs)
+            return self.state.serialize(), speed
         # Same split as training (utils.step_env_once): a single-model checkpoint
         # plays every state with the full observation; otherwise the trained
         # model only plays purgatory, with super pellets hidden and off limits,
@@ -353,6 +426,7 @@ class DQNDecisionModule:
         stuck_pos = None
         stuck_start = None
         unstuck_triggered = False
+        last_move = 0.0
 
         while self.state.isConnected():
             if low_level.connected:
@@ -363,8 +437,10 @@ class DQNDecisionModule:
                 last_ticks = self.state.currTicks
             else:
                 # Simulation: one move per TICKS_PER_STEP ticks at 24 fps (1/3 s),
-                # the speed the observation's channel 15 reports
-                await asyncio.sleep(TICKS_PER_STEP / 24)
+                # the speed the observation's channel 15 reports, counting the time the
+                # last move's search took
+                await asyncio.sleep(max(0.0, TICKS_PER_STEP / 24 - (time() - last_move)))
+                last_move = time()
                 last_ticks = self.state.currTicks
 
             if self.state.gameMode == GameModes.PAUSED:
@@ -375,7 +451,10 @@ class DQNDecisionModule:
 
             self.state.lock()
 
-            direction = self.get_direction()
+            direction = self._choose()
+            if isinstance(direction, tuple):
+                # The search runs in a worker thread, so the client keeps receiving messages
+                direction = await asyncio.to_thread(self._search, *direction)
             pacman_pos = (self.state.pacmanLoc.row, self.state.pacmanLoc.col)
 
             if self.log:
