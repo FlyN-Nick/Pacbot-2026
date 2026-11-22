@@ -210,6 +210,16 @@ class PlannerTests(unittest.TestCase):
 		best = max((a for a in range(5) if mask[a]), key=lambda a: logits[a])
 		self.assertEqual(bot.get_direction(), self.dqn._ACTION_TO_DIR[best])
 
+	def test_search_runs_on_the_cpu_on_a_mac(self):
+		# Apple's GPU slows down between moves, so the search is faster on the CPU
+		from unittest import mock
+		state, _ = self.bot_state()
+		with mock.patch('torch.backends.mps.is_available', return_value=True), \
+				mock.patch('torch.cuda.is_available', return_value=False), \
+				contextlib.redirect_stdout(io.StringIO()):
+			bot = self.dqn.DQNDecisionModule(state, str(self.az_path), speed=8, search=4)
+		self.assertEqual(bot.device.type, 'cpu')
+
 	def test_two_model_checkpoints_cannot_search(self):
 		path = Path(self.tmp.name) / 'two-model.ckpt.pt'
 		self.torch.save({'state_dict': self.q_net.state_dict(), 'env_version': 2, 'single_model': False,

@@ -205,7 +205,10 @@ class DQNDecisionModule:
         self.hybrid_mode = hybrid_mode
         self.force_no_bot = force_no_bot
         self.device = torch.device(
-            'mps' if torch.backends.mps.is_available()
+            # The search runs on the CPU on a Mac: Apple's GPU slows down while idle between
+            # moves, so in a game a simulation took ~3 ms on an M2 Max's GPU against ~1.2 ms
+            # on its CPU (back to back the two are close)
+            'mps' if torch.backends.mps.is_available() and search is None
             else 'cuda' if torch.cuda.is_available()
             else 'cpu'
         )
