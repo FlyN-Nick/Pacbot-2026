@@ -139,13 +139,31 @@ class PlannerTests(unittest.TestCase):
 			self.assertTrue(env.action_mask()[action])
 			self.assertEqual(planner.last_sims, 8)
 
-	def test_searches_after_a_lost_life_and_on_later_levels(self):
-		# Training games end at the first lost life or a cleared board; the bot's go on
+	def test_searches_full_games_from_the_real_lives_and_level(self):
+		# As the competition plays and the full-game evaluations search: lives and level as the
+		# server sent them, and a lost life isn't the end unless it was the last
 		planner = self.planner(sims=4)
+		self.assertTrue(planner.env.full_game)
 		env, ticks = next(random_game_states())
 		state = bytearray(env.game_state_bytes())
 		state[self.sp.LEVEL_BYTE], state[self.sp.LIVES_BYTE] = 2, 1
 		self.assertTrue(env.action_mask()[planner.plan(bytes(state), ticks)])
+		self.assertEqual((planner.env.level(), planner.env.lives()), (2, 1))
+		state[self.sp.LIVES_BYTE] = 2
+		planner.plan(bytes(state), ticks)
+		self.assertEqual(planner.env.lives(), 2)
+		self.assertFalse(planner.env.is_done())  # a single-life game would have ended
+
+	def test_alphazero_runs_search_as_they_trained(self):
+		base = {'discount': 0.99, 'reward_scale': 0.02, 'c_visit': 50.0, 'c_scale': 0.1}
+		self.assertEqual(self.sp.search_settings(base, True), base)  # Gumbel
+		self.assertEqual(self.sp.search_settings({**base, 'search': 'gumbel'}, True), base)
+		puct = self.sp.search_settings({**base, 'search': 'puct', 'c_puct': 2.0}, True)
+		self.assertEqual(puct, {**base, 'puct': True, 'c_puct': 2.0, 'c_puct_base': 19652.0})
+		evaluator = self.sp.PolicyValueEvaluator(self.pv_net, self.torch.device('cpu'))
+		planner = self.sp.SearchPlanner(evaluator, puct, 2, sims=8)
+		for env, ticks in random_game_states():
+			self.assertTrue(env.action_mask()[planner.plan(bytes(env.game_state_bytes()), ticks)])
 
 	def test_auto_scales_with_speed_within_bounds(self):
 		planner = self.planner(min_sims=16, max_sims=512, budget=0.5)
@@ -197,6 +215,21 @@ class PlannerTests(unittest.TestCase):
 				self.assertIn(direction, self.dqn._ACTION_TO_DIR)
 				self.assertTrue(env.action_mask()[self.dqn._ACTION_TO_DIR.index(direction)])
 				self.assertEqual(bot.planner.last_sims, 8)
+
+	def test_graph_alphazero_checkpoints_play_through_the_search(self):
+		import pacbot_rl_models
+		net = pacbot_rl_models.MazeGraphPVNet(self.dqn.OBS_SHAPE, self.dqn.NUM_ACTIONS)
+		path = Path(self.tmp.name) / 'graph-az.ckpt.pt'
+		self.torch.save({'state_dict': net.state_dict(), 'env_version': 2, 'single_model': True,
+		                 'config': {'model': 'MazeGraphPVNet', 'discount': 0.99, 'reward_scale': 0.02,
+		                            'c_visit': 50.0, 'c_scale': 0.1}}, path)
+		with contextlib.redirect_stdout(io.StringIO()):
+			state, env = self.bot_state()
+			bot = self.dqn.DQNDecisionModule(state, str(path), speed=8, search=4)
+		self.assertTrue(bot.alphazero)
+		self.assertIsInstance(bot.planner.evaluator, self.sp.PolicyValueEvaluator)
+		direction = bot.get_direction()
+		self.assertTrue(env.action_mask()[self.dqn._ACTION_TO_DIR.index(direction)])
 
 	def test_alphazero_without_search_plays_its_policy(self):
 		with contextlib.redirect_stdout(io.StringIO()):
