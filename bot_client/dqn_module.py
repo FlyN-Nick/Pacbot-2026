@@ -254,9 +254,10 @@ class DQNDecisionModule:
         self.max_speed = int(self.config.get('max_speed', DEFAULT_MAX_SPEED))
         self.ghost_next_obs = bool(loaded.get('ghost_next_obs', False))
         model_class = _model_class(model_name)
-        # AlphaZero checkpoints (curc-pacbot-rl train_alphazero.py): a policy and a value
-        # instead of Q values; without search the bot plays the policy's most likely move
-        self.alphazero = issubclass(model_class, _dqn_models.PVNetV2)
+        # AlphaZero and PPO checkpoints (curc-pacbot-rl train_alphazero.py, train_ppo.py): a
+        # policy and a value instead of Q values (models.is_policy_value); without search the bot
+        # plays the policy's most likely move
+        self.alphazero = bool(getattr(model_class, 'POLICY_VALUE', False))
         self.q_net = model_class(OBS_SHAPE, NUM_ACTIONS).to(self.device)
         self.q_net.load_state_dict(loaded['state_dict'])
         self.q_net.eval()

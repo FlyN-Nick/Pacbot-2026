@@ -4,9 +4,13 @@ Rust game (pacbot_rs.gumbel_search, the search the evaluation reports use), star
 live game state the server sent.
 
 The server's game state bytes load straight into the Rust game (PacmanGym.set_game_state_bytes),
-so the search simulates exactly the state the bot sees. The search plays the game it was trained
-on: lives and level are set to the start's (training games end at the first lost life or a
-cleared board), so after a lost life or on a later level it still searches the board as it is.
+so the search simulates exactly the state the bot sees, lives and level included. It searches
+full games (PacmanGym.full_game), as the competition plays and as the full-game evaluations
+search: a lost life costs the death penalty and play goes on from the respawn, a cleared board
+earns the clear bonus and play goes on to the next level, and only losing the last life ends it.
+
+The search is the one the checkpoint trained with: Gumbel, or PUCT for AlphaZero runs trained
+with --search puct (curc-pacbot-rl alphazero.search_config, without training's exploration).
 
 The number of simulations per move is fixed, or ("auto") scaled to the time Pacman takes to move
 one cell: a share of that time (`budget`), divided by the measured time per simulation, within
@@ -33,6 +37,9 @@ GAME_TICKS_PER_SECOND = 24
 LEVEL_BYTE = 10
 LIVES_BYTE = 11
 
+# PUCT's constants when a checkpoint doesn't record them (curc-pacbot-rl alphazero.SEARCH_DEFAULTS)
+PUCT_DEFAULTS = {'c_puct': 1.25, 'c_puct_base': 19652.0}
+
 
 class QNetworkEvaluator:
     '''
@@ -55,7 +62,7 @@ class QNetworkEvaluator:
 
 
 class PolicyValueEvaluator:
-    '''An AlphaZero network (PVNetV2, PVNetV2Wide) as the search's evaluator.'''
+    '''A policy and value network (AlphaZero's or PPO's: PVNetV2, PVNetV2Wide, MazeGraphPVNet) as the search's evaluator.'''
 
     def __init__(self, net: torch.nn.Module, device: torch.device) -> None:
         self.net = net
@@ -70,8 +77,14 @@ class PolicyValueEvaluator:
 def search_settings(config: dict, alphazero: bool) -> dict:
     '''The checkpoint's units (discount, reward scale) and search constants, as the evaluations use.'''
     if alphazero:
-        return {'discount': config['discount'], 'reward_scale': config['reward_scale'],
-                'c_visit': config['c_visit'], 'c_scale': config['c_scale']}
+        settings = {'discount': config['discount'], 'reward_scale': config['reward_scale'],
+                    'c_visit': config['c_visit'], 'c_scale': config['c_scale']}
+        if config.get('search') == 'puct':
+            settings['puct'] = True
+            for key, default in PUCT_DEFAULTS.items():
+                value = config.get(key)
+                settings[key] = float(default if value is None else value)
+        return settings
     # A DQN: its own discount and reward scale, AlphaZero's default search constants
     return {'discount': config.get('discount_factor', 0.99), 'reward_scale': config.get('reward_scale', 0.02)}
 
@@ -102,9 +115,8 @@ class SearchPlanner:
         self.env = pacbot_rs.PacmanGym(self.obs_config)
         self.env.env_version = env_version
         self.env.ghost_next_obs = ghost_next_obs
-        start = self.env.game_state_bytes()
-        self._start_level, self._start_lives = start[LEVEL_BYTE], start[LIVES_BYTE]
-        self._start = bytes(start)
+        self.env.full_game = True
+        self._start = bytes(self.env.game_state_bytes())
         # Seconds per simulation, measured (an average over recent moves)
         self.seconds_per_sim: float | None = None
         self.last_sims = 0
@@ -132,9 +144,7 @@ class SearchPlanner:
         return self._search(state_bytes, ticks_per_step, self.sims_for(ticks_per_step))
 
     def _search(self, state_bytes: bytes, ticks_per_step: float, sims: int) -> int:
-        state = bytearray(state_bytes)
-        state[LEVEL_BYTE], state[LIVES_BYTE] = self._start_level, self._start_lives
-        self.env.set_game_state_bytes(bytes(state), max(1, round(ticks_per_step)))
+        self.env.set_game_state_bytes(bytes(state_bytes), max(1, round(ticks_per_step)))
         config = pacbot_rs.GumbelConfig(num_simulations=sims, gumbel_scale=0.0, **self.settings)
         self.seed += 1
         t = perf_counter()
